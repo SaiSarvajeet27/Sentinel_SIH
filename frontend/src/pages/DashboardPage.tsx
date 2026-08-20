@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ShieldAlert,
@@ -62,6 +62,21 @@ export const DashboardPage: React.FC = () => {
   const { theme } = useTheme();
   const [threatFilter, setThreatFilter] = useState('All Threats');
   const [timeRange, setTimeRange] = useState('Last 24 Hours');
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const dateFmt = new Intl.DateTimeFormat('en-US', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  });
+  const nextAudit = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const nextAuditFmt = new Intl.DateTimeFormat('en-US', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
 
   const threatActivityData = dashboardExtras.threatActivity.length
     ? dashboardExtras.threatActivity
@@ -123,10 +138,9 @@ export const DashboardPage: React.FC = () => {
 
         {/* Right Date & Range Selectors */}
         <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-soc-card border border-soc-border text-xs text-soc-textPrimary hover:border-soc-borderLight transition-colors cursor-pointer select-none shadow-sm">
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-soc-card border border-soc-border text-xs text-soc-textPrimary select-none shadow-sm">
             <Calendar className="w-3.5 h-3.5 text-soc-textSecondary" />
-            <span>15 May 2026, 1:28 PM</span>
-            <ChevronDown className="w-3 h-3 text-soc-textSecondary" />
+            <span>{dateFmt.format(now)}</span>
           </div>
 
           <div
@@ -560,7 +574,7 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4">
-          <span className="text-[11px]">Next Audit: <strong className="text-soc-textPrimary">16 May 2026</strong></span>
+          <span className="text-[11px]">Next Audit: <strong className="text-soc-textPrimary">{nextAuditFmt.format(nextAudit)}</strong></span>
           <span className="text-[11px] px-2 py-0.5 rounded bg-soc-secondaryCard border border-soc-border text-soc-textPrimary font-mono">
             v2026.4.2
           </span>
