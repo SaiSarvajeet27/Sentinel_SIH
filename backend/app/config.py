@@ -140,6 +140,16 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 SIM_HOSTS = int(os.getenv("SIM_HOSTS", 12))
 SIM_USERS = int(os.getenv("SIM_USERS", 25))
 
+# Runs a full attack scenario (fresh Gemini-authored plan → real detection →
+# real dual-path AI analysis → real remediation proposal) on its own, on a
+# timer, so the SOC has live incidents without anyone clicking a "demo" Play
+# button. Each cycle spends exactly one Gemini call — at the default 90
+# minutes that is 16 cycles/day, comfortably under a typical ~20/day Gemini
+# free-tier project quota. Lower this and you may exhaust that quota before
+# the day is over; raise it if new incidents feel too infrequent.
+AUTO_GENERATE_ENABLED = os.getenv("AUTO_GENERATE_ENABLED", "true").lower() == "true"
+AUTO_GENERATE_INTERVAL_MINUTES = int(os.getenv("AUTO_GENERATE_INTERVAL_MINUTES", 90))
+
 # ── Correlation tuning ──────────────────────────────────────────────────
 CLUSTER_HOP_BUDGET = 3.0        # weighted path cost, not hop count
 CLUSTER_WINDOW_MIN = 60         # sliding, measured from the latest alert

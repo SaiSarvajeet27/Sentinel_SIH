@@ -46,10 +46,12 @@ async def lifespan(app: FastAPI):
         log.exception("graph warm-up failed; starting cold")
 
     task = asyncio.create_task(_metrics_flusher())
+    auto_gen_task = asyncio.create_task(_auto_generate_loop())
     log.info("Sentinel SOC ready — AI %s",
              "enabled" if llm_router.ai_enabled() else "DISABLED")
     yield
     task.cancel()
+    auto_gen_task.cancel()
 
 
 app = FastAPI(title="Sentinel SOC", version="1.0.0", lifespan=lifespan)
@@ -123,6 +125,30 @@ async def _metrics_flusher() -> None:
                 metrics.flush_counters(s)
         except Exception:                                # noqa: BLE001
             log.exception("metrics flush failed")
+
+
+async def _auto_generate_loop() -> None:
+    """Keep the SOC live without anyone clicking a demo Play button.
+
+    Runs the same real pipeline the guided demo uses — a fresh
+    Gemini-authored attack plan, real detection, real dual-path AI
+    analysis, real remediation proposal — on a timer, entirely server-side.
+    Skips a cycle if one is already running rather than overlapping two.
+    """
+    if not config.AUTO_GENERATE_ENABLED:
+        log.info("auto-generation disabled (AUTO_GENERATE_ENABLED=false)")
+        return
+    interval = max(1, config.AUTO_GENERATE_INTERVAL_MINUTES) * 60
+    await asyncio.sleep(15)          # let startup finish before the first cycle
+    while True:
+        try:
+            if not demo.state.playing:
+                log.info("auto-generation: starting a new incident scenario")
+                await demo.start(regenerate=True)
+                await demo.play()
+        except Exception:                                # noqa: BLE001
+            log.exception("auto-generation cycle failed")
+        await asyncio.sleep(interval)
 
 
 # ══════════════════════════════════════════════════════════════════════

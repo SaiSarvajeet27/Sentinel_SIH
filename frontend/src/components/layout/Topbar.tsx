@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, HelpCircle, ChevronDown, LogOut, Play, Pause, RotateCcw, Cpu, Sun, Moon, CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
-import { realtimeService, DemoStep } from '../../services/realtimeService';
+import { Search, Bell, HelpCircle, ChevronDown, LogOut, Radio, Cpu, Sun, Moon, CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { DemoStep } from '../../services/realtimeService';
 import { useSOC } from '../common/SOCContext';
 import { useTheme } from '../common/ThemeContext';
 import { GlobalSearchModal } from '../common/GlobalSearchModal';
@@ -25,18 +25,6 @@ export const Topbar: React.FC<Props> = ({ isDemoRunning = false }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
 
-  const handleToggleDemo = () => {
-    if (isDemoRunning) {
-      realtimeService.pauseDemo();
-    } else {
-      realtimeService.startDemo();
-    }
-  };
-
-  const handleResetDemo = () => {
-    realtimeService.resetDemo();
-  };
-
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -45,28 +33,17 @@ export const Topbar: React.FC<Props> = ({ isDemoRunning = false }) => {
   return (
     <>
       <header className="h-14 bg-soc-header border-b border-soc-border px-5 flex items-center justify-between sticky top-0 z-30 select-none font-sans transition-colors">
-        {/* Left: Brand/Demo controls */}
+        {/* Left: Brand/Live status */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 p-1 rounded-lg bg-soc-card border border-soc-border shadow-sm">
-            <button
-              onClick={handleToggleDemo}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
-                isDemoRunning
-                  ? 'bg-amber-500 text-black font-bold'
-                  : 'bg-soc-accent text-white hover:opacity-90'
-              }`}
+          {isDemoRunning && (
+            <div
+              title="A new incident scenario is being generated and analyzed in the background"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-soc-card border border-soc-border shadow-sm text-xs font-semibold text-soc-ai"
             >
-              {isDemoRunning ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3 fill-white" />}
-              <span>{isDemoRunning ? 'Pause Demo' : 'Live Demo'}</span>
-            </button>
-            <button
-              onClick={handleResetDemo}
-              title="Reset Demo"
-              className="p-1 rounded-md text-soc-textSecondary hover:text-soc-textPrimary hover:bg-soc-cardHover transition-colors"
-            >
-              <RotateCcw className="w-3 h-3" />
-            </button>
-          </div>
+              <Radio className="w-3 h-3 animate-pulse" />
+              <span>Live: New Incident Generating…</span>
+            </div>
+          )}
 
           {/* AI AGENT STATUS BADGE */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-soc-card border border-soc-border text-[11px] text-soc-textSecondary shadow-sm">

@@ -29,8 +29,8 @@ const STEP_ROUTES = ['/', '/evidence', '/incidents', '/incidents', '/incidents',
 
 const IDLE_STEP: DemoStep = {
   stepIndex: 0,
-  title: 'Not started',
-  description: 'Click Live Demo to run the real seven-step scenario against the backend.',
+  title: 'Idle',
+  description: 'Waiting for the next auto-generated incident scenario.',
   activeRoute: '/',
   activeIncidentId: '',
   riskScore: 0,
