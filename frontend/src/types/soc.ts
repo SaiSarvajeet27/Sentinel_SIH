@@ -176,6 +176,24 @@ export interface AITransparency {
   removedClaims: RemovedClaim[];
 }
 
+export interface RemediationStep {
+  actionId: string;
+  kind: string;
+  label: string;
+  target: string;
+  tier: AuthorizationTier;
+  why: string;
+  status: string; // pending | partially_approved | executed | rejected | dismissed | rolled_back
+  reversible: boolean;
+  needsApproval: boolean;
+}
+
+export interface RemediationPlan {
+  steps: RemediationStep[];
+  awaitingApproval: number;
+  autoExecuted: number;
+}
+
 export interface AIAnalysis {
   incidentId: string;
   threatName: string;
@@ -186,6 +204,7 @@ export interface AIAnalysis {
   rootCause: string;
   riskAssessment: string;
   recommendedPlaybook: string;
+  remediationPlan?: RemediationPlan;
 
   // Phase 2 Decision Intelligence & Transparency Fields
   decisionSupport?: DecisionSupport;

@@ -30,6 +30,8 @@ import {
   DecisionSupport,
   HistoricalPrecedent,
   ActionAlternative,
+  RemediationPlan,
+  RemediationStep,
 } from '../types/soc';
 
 // ── small shared helpers ──────────────────────────────────────────────
@@ -58,7 +60,9 @@ const SEVERITY_MAP: Record<string, Severity> = {
 
 const STATUS_MAP: Record<string, IncidentStatus> = {
   open: 'OPEN',
+  investigating: 'INVESTIGATING',
   contained: 'CONTAINED',
+  resolved: 'RESOLVED',
   closed: 'CLOSED',
   false_positive: 'RESOLVED',
 };
@@ -425,7 +429,7 @@ export function adaptAIAnalysis(
   explanation: any,
   alternatives: any[],
   trustTimeMachine: any,
-  remediationSummary?: string
+  remediation?: { actions?: any[]; awaiting_approval?: number; auto_executed?: number }
 ): AIAnalysis {
   const evidence = explanation?.evidence || [];
   const indicators: IndicatorCheck[] = evidence.map((e: any, i: number) => ({
@@ -514,6 +518,30 @@ export function adaptAIAnalysis(
     ? Math.round(incidentRow.risk_factors.confidence * 100)
     : 75;
 
+  const remediationSteps: RemediationStep[] = (remediation?.actions || []).map((a: any) => ({
+    actionId: a.action_id,
+    kind: a.kind,
+    label: a.label || titleCase(a.kind),
+    target: a.target,
+    tier: `TIER_${a.tier ?? 0}` as AuthorizationTier,
+    why: a.why || a.rationale || '',
+    status: a.status,
+    reversible: !!a.reversible,
+    needsApproval: a.status === 'pending' || a.status === 'partially_approved',
+  }));
+
+  const remediationPlan: RemediationPlan | undefined = remediation
+    ? {
+        steps: remediationSteps,
+        awaitingApproval: remediation.awaiting_approval ?? 0,
+        autoExecuted: remediation.auto_executed ?? 0,
+      }
+    : undefined;
+
+  const recommendedPlaybook = remediationSteps.length
+    ? `${remediationSteps.length}-step plan: ${remediationSteps.map((s) => s.label).join(', ')}`
+    : 'No remediation plan proposed yet for this incident.';
+
   return {
     incidentId: incidentRow.incident_id,
     threatName: incidentRow.title,
@@ -523,7 +551,8 @@ export function adaptAIAnalysis(
     indicators,
     rootCause: explanation?.rationale || '',
     riskAssessment: explanation?.confidence_driver || '',
-    recommendedPlaybook: remediationSummary || 'Awaiting remediation proposal',
+    recommendedPlaybook,
+    remediationPlan,
     decisionSupport,
     claims,
     dataSources,

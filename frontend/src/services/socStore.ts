@@ -283,13 +283,28 @@ class SOCStore {
         backendApi.trustTimeMachine(id).catch(() => null),
         backendApi.getRemediation(id).catch(() => null),
       ]);
-      const summary = remediation?.actions?.length ? `${remediation.actions.length}-step plan proposed` : undefined;
-      this.aiAnalyses[id] = adaptAIAnalysis(incidentRow, explanation, alternatives, ttm, summary);
+      this.aiAnalyses[id] = adaptAIAnalysis(incidentRow, explanation, alternatives, ttm, remediation);
       this.notify();
     } catch {
       /* keep the placeholder; a retry happens next time this getter is called */
     } finally {
       this.aiAnalysisFetching.delete(id);
+    }
+  }
+
+  public async proposeRemediation(incidentId: string) {
+    try {
+      await backendApi.proposeRemediation(incidentId);
+      delete this.aiAnalyses[incidentId];
+      await this.fetchAIAnalysis(incidentId);
+      this.pushNotification({
+        id: `NOTIF-${Date.now()}`, timestamp: new Date().toISOString(),
+        title: 'Remediation Plan Proposed',
+        message: `A new response plan was drafted for ${incidentId}.`,
+        type: 'success',
+      });
+    } catch (e) {
+      this.pushError('Could not propose a remediation plan', e);
     }
   }
 

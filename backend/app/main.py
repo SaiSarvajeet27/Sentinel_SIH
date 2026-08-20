@@ -266,16 +266,24 @@ def benchmark(run_id: str | None = None, s: Session = Depends(db_dep)):
 @app.get("/api/incidents")
 def list_incidents(status: str | None = "open", min_risk: float = 0,
                    limit: int = 50, offset: int = 0,
+                   include_historical: bool = False,
                    s: Session = Depends(db_dep)):
     """Open incidents by default.
 
     This used to default to *everything*, which meant the Recent Incidents
     table filled with the 36 seeded "(historical)" precedent records unless
-    the caller remembered `?status=open`. Those exist for the Trust Time
-    Machine and should never be on the dashboard. Pass `status=all` if you
-    genuinely want them.
+    the caller remembered `?status=open`. Those exist only to give the
+    Trust Time Machine / precedent panel something to compute statistics
+    from — they carry no events, alerts or actions and were never meant to
+    be individually investigated. `status=all` used to leak them back in;
+    now they stay excluded regardless of `status` unless the caller passes
+    `include_historical=true` explicitly (nothing in this codebase does —
+    the precedent/trust-time-machine code queries the Incident table
+    directly and is unaffected by this endpoint).
     """
     q = s.query(Incident).filter(Incident.risk_score >= min_risk)
+    if not include_historical:
+        q = q.filter(~Incident.incident_id.startswith("inc_hist_"))
     if status and status != "all":
         q = q.filter(Incident.status == status)
     total = q.count()

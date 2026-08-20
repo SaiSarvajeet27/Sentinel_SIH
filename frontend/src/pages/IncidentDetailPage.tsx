@@ -16,6 +16,7 @@ import {
 import { SeverityBadge } from '../components/common/SeverityBadge';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { RiskScore } from '../components/common/RiskScore';
+import { TierBadge } from '../components/common/TierBadge';
 import { AttackGraph } from '../components/attack-graph/AttackGraph';
 import { useSOC } from '../components/common/SOCContext';
 import { IncidentStatus, EventSource } from '../types/soc';
@@ -32,13 +33,17 @@ export const IncidentDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const context = useOutletContext<{ currentStep: DemoStep }>();
   const currentStep = context?.currentStep;
-  const { incidents, events, evidence, aiAnalyses, setActiveIncidentId, aiEnabled, getAIClaims, setIncidentStatus } = useSOC();
+  const {
+    incidents, events, evidence, aiAnalyses, setActiveIncidentId, aiEnabled, getAIClaims,
+    setIncidentStatus, authUser, approveRequest, proposeRemediation,
+  } = useSOC();
 
   const targetId = id || incidents[0]?.id || '';
   const incident = incidents.find((i) => i.id === targetId) || incidents[0];
 
   const [activeTab, setActiveTab] = useState<'overview' | 'graph' | 'ai' | 'evidence' | 'response' | 'timeline'>('overview');
   const [sourceFilter, setSourceFilter] = useState<EventSource | 'ALL'>('ALL');
+  const [isProposing, setIsProposing] = useState(false);
 
   const displayStatus = incident.status;
   const aiAnalysis = aiAnalyses[incident.id];
@@ -297,15 +302,80 @@ export const IncidentDetailPage: React.FC = () => {
 
       {activeTab === 'response' && (
         <div className="p-5 rounded-xl bg-soc-card border border-soc-border space-y-4 text-xs shadow-sm">
-          <h3 className="text-sm font-bold text-soc-textPrimary uppercase tracking-wider">AI Recommended Response Playbook</h3>
-          <div className="p-3.5 rounded-lg bg-purple-500/15 border border-soc-ai/40 text-soc-ai font-bold">
-            {aiAnalysis.recommendedPlaybook}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-soc-textPrimary uppercase tracking-wider">AI-Proposed Remediation Plan</h3>
+            {aiAnalysis.remediationPlan && aiAnalysis.remediationPlan.steps.length > 0 && (
+              <span className="text-[11px] text-soc-textMuted">
+                {aiAnalysis.remediationPlan.awaitingApproval} awaiting approval · {aiAnalysis.remediationPlan.autoExecuted} auto-executed
+              </span>
+            )}
           </div>
+
+          {!aiAnalysis.remediationPlan || aiAnalysis.remediationPlan.steps.length === 0 ? (
+            <div className="p-4 rounded-xl bg-soc-secondaryCard border border-soc-border text-center space-y-3">
+              <p className="text-soc-textMuted">No remediation plan has been proposed for this incident yet.</p>
+              <button
+                onClick={async () => {
+                  setIsProposing(true);
+                  await proposeRemediation(incident.id);
+                  setIsProposing(false);
+                }}
+                disabled={isProposing}
+                className="px-4 py-2 rounded-lg bg-soc-accent text-white font-bold text-xs shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                {isProposing ? 'Proposing…' : 'Propose Remediation Plan'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {aiAnalysis.remediationPlan.steps.map((step, i) => (
+                <div key={step.actionId} className="p-3.5 rounded-lg bg-soc-secondaryCard border border-soc-border space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-soc-textMuted font-mono">{i + 1}.</span>
+                      <span className="font-bold text-soc-textPrimary font-mono">{step.label}</span>
+                      <TierBadge tier={step.tier} size="sm" />
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      step.status === 'executed' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-400' :
+                      step.status === 'rejected' || step.status === 'dismissed' ? 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-400' :
+                      'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400'
+                    }`}>
+                      {step.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                  <p className="text-soc-textSecondary font-sans">
+                    <span className="text-soc-textMuted font-bold">Target:</span> {step.target} &nbsp;·&nbsp;
+                    <span className="text-soc-textMuted font-bold">Reversible:</span> {step.reversible ? 'Yes' : 'No'}
+                  </p>
+                  {step.why && <p className="text-soc-textSecondary font-sans italic">"{step.why}"</p>}
+
+                  {step.needsApproval && (
+                    <div className="pt-1.5 border-t border-soc-border flex items-center gap-2">
+                      <button
+                        onClick={() => approveRequest(step.actionId, authUser ? `${authUser.name} (${authUser.role})` : 'Analyst')}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => navigate('/approvals')}
+                        className="px-3 py-1.5 rounded-lg bg-soc-card border border-soc-border text-soc-textSecondary hover:text-soc-textPrimary font-bold text-[11px] cursor-pointer"
+                      >
+                        Reject / Override / Escalate…
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             onClick={() => navigate('/approvals')}
-            className="px-4 py-2 rounded-lg bg-soc-accent text-white font-bold text-xs shadow-sm flex items-center gap-1.5"
+            className="px-4 py-2 rounded-lg bg-soc-secondaryCard border border-soc-border text-soc-textSecondary hover:text-soc-textPrimary font-bold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer"
           >
-            <span>Review in Approvals Queue</span>
+            <span>View Full Governance & Authorization Queue</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
