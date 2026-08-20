@@ -72,7 +72,7 @@ local Postgres instance instead if you want the production-shaped path —
 see `backend/.env.example` for the connection string.
 
 There's no "start demo" button to click — shortly after the backend
-starts, and then every `AUTO_GENERATE_INTERVAL_MINUTES` (default 120)
+starts, and then every `AUTO_GENERATE_INTERVAL_MINUTES` (default 15)
 after that, it generates a complete new incident on its own: a fresh
 Gemini-authored attack plan, real detection, real dual-path AI analysis,
 and a real remediation proposal waiting in Approvals. It tracks when the
@@ -108,12 +108,15 @@ at the bottom.
 Free-tier quota is small and varies per project — some projects get as few
 as ~20 requests/day for `gemini-2.5-flash`. That's fine: this app only ever
 spends **one** Gemini call per incident-generation cycle, and the default
-120-minute interval (`AUTO_GENERATE_INTERVAL_MINUTES`) keeps that around
-12 cycles/day, with margin to spare. Even going over the quota doesn't
-stop anything — the router falls back to Groq automatically, so
-generation keeps producing fresh AI-authored scenarios either way (see
-[AI models used](#ai-models-used)). If you want to check your actual
-limit, it's shown at https://aistudio.google.com/rate-limit.
+15-minute interval (`AUTO_GENERATE_INTERVAL_MINUTES`) runs past that
+quota a few hours into the day on purpose — going over it doesn't stop
+anything, the router falls back to Groq automatically (900/day, easily
+enough to cover the rest of the day at this pace), so generation keeps
+producing fresh AI-authored scenarios either way, just from a different
+model (see [AI models used](#ai-models-used)). Raise the interval if you'd
+rather more of the day's cycles landed on Gemini specifically. If you want
+to check your actual limit, it's shown at
+https://aistudio.google.com/rate-limit.
 
 ### 2. Groq key (used for everything else — explanations, analysis, remediation)
 
