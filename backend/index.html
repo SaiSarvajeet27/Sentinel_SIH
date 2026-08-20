@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Sentinel SOC — reference client</title>
+<!--
+  A REFERENCE CLIENT, not the product.
+
+  Deliberately plain: no framework, no build step, no styling worth
+  defending. Every control here calls a real endpoint and renders what
+  comes back, so it answers one question — does the backend actually work?
+
+  It is meant to be read and replaced. `API` at the bottom of this file is
+  the whole surface: 66 endpoints, one fetch wrapper, one token. Point the
+  real frontend at the same functions.
+
+  Serve it from the backend itself:  uvicorn app.main:app --port 8000
+  then open http://localhost:8000/
+-->
+<style>
+  :root{--bg:#0b0f19;--panel:#131a2a;--line:#233047;--ink:#e6eaf2;
+        --dim:#8fa0bd;--accent:#7c6ff0;--ok:#3fbf7f;--warn:#e0a33e;
+        --bad:#e0574a;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:10px 18px;
+         border-bottom:1px solid var(--line);background:var(--panel);
+         position:sticky;top:0;z-index:10;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.2px}
+  .pill{font:11px var(--mono);padding:2px 8px;border-radius:99px;
+        border:1px solid var(--line);color:var(--dim)}
+  .pill.on{color:var(--ok);border-color:var(--ok)}
+  .pill.off{color:var(--bad);border-color:var(--bad)}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:14px;
+       align-items:start}
+  section{background:var(--panel);border:1px solid var(--line);
+          border-radius:8px;padding:12px;min-width:0}
+  section h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;
+             color:var(--dim);margin:0 0 10px}
+  button{background:#1b2438;color:var(--ink);border:1px solid var(--line);
+         border-radius:6px;padding:6px 11px;font-size:13px;cursor:pointer;
+         margin:0 6px 6px 0}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);
+                 color:#fff;font-weight:600}
+  button.danger{border-color:var(--bad);color:var(--bad)}
+  input{background:#0b1120;border:1px solid var(--line);color:var(--ink);
+        border-radius:6px;padding:7px 9px;font-size:13px;width:100%}
+  pre{background:#080c15;border:1px solid var(--line);border-radius:6px;
+      padding:10px;overflow:auto;max-height:340px;font:11.5px/1.45 var(--mono);
+      color:#c7d3e8;margin:0;white-space:pre-wrap;word-break:break-word}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--dim);font-weight:500;padding:5px 6px;
+     border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase}
+  td{padding:5px 6px;border-bottom:1px solid #1a2336;vertical-align:top}
+  tr.sel td{background:#1a2440}
+  tr.click{cursor:pointer}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .grow{flex:1;min-width:120px}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px}
+  .kpi div{background:#0f1626;border:1px solid var(--line);border-radius:6px;
+           padding:8px}
+  .kpi b{display:block;font-size:19px;font-weight:600}
+  .kpi span{font-size:10.5px;color:var(--dim);text-transform:uppercase}
+  .feed{max-height:240px;overflow:auto;font:11.5px var(--mono)}
+  .feed div{padding:3px 0;border-bottom:1px solid #161f31;color:#a9bad6}
+  .feed b{color:var(--accent)}
+  .full{grid-column:1/-1}
+  .hi{color:var(--bad)}.mid{color:var(--warn)}.lo{color:var(--ok)}
+  .muted{color:var(--dim);font-size:12px}
+  #login{max-width:340px;margin:14vh auto;text-align:left}
+  #login p{color:var(--dim);font-size:12.5px}
+  #err{color:var(--bad);font-size:12.5px;min-height:18px}
+  .tabs button{font-size:12px;padding:4px 9px}
+  .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+</style>
+
+<div id="login">
+  <h1>Sentinel SOC</h1>
+  <p>Every route requires a token. There is no demo bypass — bootstrap
+     printed three accounts with different roles.</p>
+  <p><input id="email" value="simran@sentinel.local" placeholder="email"></p>
+  <p><input id="pw" type="password" placeholder="password"></p>
+  <p><button class="primary" onclick="doLogin()">Sign in</button></p>
+  <p id="err"></p>
+  <p class="muted">analyst / senior_analyst / manager differ in what they
+     may approve. Sign in as each to see the gate refuse.</p>
+</div>
+
+<div id="app" hidden>
+<header>
+  <h1>Sentinel SOC</h1>
+  <span class="pill" id="who"></span>
+  <span class="pill" id="aip"></span>
+  <span class="pill" id="wsp">ws…</span>
+  <span class="pill" id="notif">notifications…</span>
+  <span class="grow"></span>
+  <input id="q" placeholder="Ctrl+K search" style="width:160px" onkeydown="if(event.key==='Enter')runSearch()">
+  <button onclick="runSearch()">Search</button>
+  <button onclick="toggleAI()" id="aibtn">Toggle AI</button>
+  <button onclick="logout()">Sign out</button>
+</header>
+
+<main>
+  <section class="full">
+    <h2>Seven-step demo · <span id="stepname" class="muted"></span></h2>
+    <div class="row">
+      <button class="primary" onclick="api('/api/demo/start?regenerate=false','POST').then(afterDemo)">Start</button>
+      <button onclick="api('/api/demo/next','POST').then(afterDemo)">Next step</button>
+      <button onclick="api('/api/demo/play','POST').then(afterDemo)">Play</button>
+      <button onclick="api('/api/demo/pause','POST').then(afterDemo)">Pause</button>
+      <button class="danger" onclick="api('/api/demo/reset','POST').then(afterDemo)">Reset</button>
+      <button onclick="show('scenario', api('/api/scenarios/generate','POST'))">New scenario (Gemini)</button>
+    </div>
+    <p class="muted" id="expect"></p>
+    <div class="kpi" id="kpis"></div>
+  </section>
+
+  <section>
+    <h2>Incidents <button onclick="loadIncidents()">refresh</button></h2>
+    <table><thead><tr><th>risk</th><th>stages</th><th>agreement</th><th>title</th></tr></thead>
+      <tbody id="inc"></tbody></table>
+  </section>
+
+  <section>
+    <h2>Live feed</h2>
+    <div class="feed" id="feed"></div>
+  </section>
+
+  <section class="full">
+    <h2>Incident detail — <span id="selid" class="muted">none selected</span></h2>
+    <div class="row tabs" id="tabs"></div>
+    <pre id="detail">Select an incident above.</pre>
+    <div class="row">
+      <button onclick="withSel(id=>show('feedback', api(`/api/incidents/${id}/feedback`,'POST',{verdict:'tp'})))">Feedback: confirmed threat</button>
+      <button onclick="withSel(id=>show('feedback', api(`/api/incidents/${id}/feedback`,'POST',{verdict:'fp'})))">Feedback: false positive</button>
+      <button onclick="withSel(id=>show('feedback', api(`/api/incidents/${id}/feedback`,'POST',{verdict:'needs_review'})))">Feedback: needs review</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Approvals — the gate</h2>
+    <p class="muted">Tier 0–1 already ran. Tier 2+ waits for a named human,
+       and your role decides whether you may.</p>
+    <table><thead><tr><th>tier</th><th>action</th><th>target</th><th></th></tr></thead>
+      <tbody id="acts"></tbody></table>
+    <h2 style="margin-top:14px">Executed &amp; reversible</h2>
+    <table><thead><tr><th>tier</th><th>action</th><th>target</th><th>window</th><th></th></tr></thead>
+      <tbody id="exec"></tbody></table>
+  </section>
+
+  <section>
+    <h2>Campaign links — the model proposes, you decide</h2>
+    <div class="row">
+      <button onclick="api('/api/assist/links','POST').then(()=>loadLinks())">Ask for proposals</button>
+      <button onclick="loadLinks()">refresh</button>
+    </div>
+    <table><thead><tr><th>conf</th><th>incidents</th><th></th></tr></thead>
+      <tbody id="links"></tbody></table>
+  </section>
+
+  <section>
+    <h2>Proof panels</h2>
+    <div class="row">
+      <button onclick="show('dashboard', api('/api/dashboard'))">Dashboard</button>
+      <button onclick="show('timeseries', api('/api/metrics/timeseries?metric=alerts&window=24h'))">Timeseries</button>
+      <button onclick="show('benchmark', api('/api/benchmark'))">Detection rate</button>
+      <button onclick="show('balance', api('/api/assist/balance'))">50:50 balance</button>
+      <button onclick="show('disagreements', api('/api/disagreements'))">Disagreements</button>
+      <button onclick="show('ledger', api('/api/ledger/verify','POST'))">Verify ledger</button>
+      <button onclick="show('ledger entries', api('/api/ledger'))">Ledger entries</button>
+      <button onclick="show('ledger public key', api('/api/ledger/public-key'))">Ledger public key</button>
+      <button onclick="show('ai usage', api('/api/ai/usage'))">AI usage</button>
+      <button onclick="show('health', api('/api/health'))">Health</button>
+      <button onclick="show('devices', api('/api/devices'))">Devices</button>
+      <button onclick="show('device analytics', api('/api/devices/analytics'))">Device analytics</button>
+      <button onclick="show('activity', api('/api/activity'))">Activity log</button>
+      <button onclick="show('rules', api('/api/rules'))">Rules</button>
+      <button onclick="show('notifications', api('/api/notifications'))">Notifications</button>
+      <button class="danger" onclick="show('tamper', api('/api/ledger/tamper-test','POST'))">Tamper test</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>AI on demand</h2>
+    <div class="row">
+      <button onclick="show('triage', api('/api/assist/triage','POST'))">Triage anomalies</button>
+      <button onclick="show('second analyst', api('/api/assist/analyse','POST'))">Second analyst pass</button>
+      <button onclick="withSel(id=>show('assessment', api(`/api/incidents/${id}/assess`,'POST')))">Blind assessment</button>
+      <button onclick="withSel(id=>show('score assist', api(`/api/incidents/${id}/score-assist`,'POST')))">Score adjustment</button>
+      <button onclick="withSel(id=>show('remediation', api(`/api/incidents/${id}/remediation`,'POST')).then(loadActions))">Write the fix</button>
+      <button onclick="show('candidates', api('/api/assist/candidates'))">Anomaly queue</button>
+    </div>
+  </section>
+
+  <section class="full">
+    <h2>Lookups &amp; settings</h2>
+    <div class="row">
+      <span class="grow row">
+        <input id="devId" placeholder="device id" class="grow">
+        <button onclick="show('device', api(`/api/devices/${document.getElementById('devId').value.trim()}`))">Look up device</button>
+      </span>
+      <span class="grow row">
+        <input id="evId" placeholder="event id" class="grow">
+        <button onclick="show('event', api(`/api/events/${document.getElementById('evId').value.trim()}`))">Look up event</button>
+      </span>
+      <span class="grow row">
+        <input id="ruleId" placeholder="rule id (from Rules panel)" class="grow">
+        <button class="danger" onclick="show('rule retired', api(`/api/rules/${document.getElementById('ruleId').value.trim()}/retire`,'POST')).then(()=>show('rules', api('/api/rules')))">Retire rule</button>
+      </span>
+    </div>
+    <div class="row">
+      <span class="muted">Autonomy mode:</span>
+      <select id="autonomy">
+        <option value="always_ask">Always ask</option>
+        <option value="recommend_only">Recommend only</option>
+        <option value="act_and_notify">Act and notify</option>
+      </select>
+      <button onclick="show('autonomy', api('/api/settings/autonomy','PUT',{mode:document.getElementById('autonomy').value}))">Apply</button>
+    </div>
+  </section>
+
+  <section class="full">
+    <h2>Response — <span id="rtitle" class="muted">nothing yet</span></h2>
+    <pre id="out">Click anything above.</pre>
+  </section>
+</main>
+</div>
+
+<script>
+// ───────────────────────────────────────────────────────────────────────
+//  The entire client surface. One token, one fetch wrapper.
+// ───────────────────────────────────────────────────────────────────────
+let TOKEN = sessionStorage.getItem('tok') || '';
+let ME = null, SEL = null, WS = null;
+
+async function api(path, method='GET', body=null){
+  const r = await fetch(path, {
+    method,
+    headers: {'Content-Type':'application/json',
+              ...(TOKEN ? {'Authorization':'Bearer '+TOKEN} : {})},
+    body: body ? JSON.stringify(body) : null
+  });
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = {raw:text}; }
+  if (r.status === 401) { logout(); throw new Error('session expired'); }
+  if (!r.ok) throw Object.assign(new Error(data.detail || r.statusText),
+                                 {status:r.status, data});
+  return data;
+}
+
+async function doLogin(){
+  const err = document.getElementById('err');
+  err.textContent = '';
+  try{
+    const r = await api('/api/auth/login','POST',{
+      email: document.getElementById('email').value.trim(),
+      password: document.getElementById('pw').value});
+    TOKEN = r.access_token; sessionStorage.setItem('tok', TOKEN);
+    await start();
+  }catch(e){ err.textContent = e.message || 'login failed'; }
+}
+
+function logout(){
+  TOKEN=''; sessionStorage.removeItem('tok');
+  if (WS) { try{WS.close();}catch{} WS=null; }
+  document.getElementById('app').hidden = true;
+  document.getElementById('login').hidden = false;
+}
+
+async function start(){
+  ME = await api('/api/me');
+  document.getElementById('login').hidden = true;
+  document.getElementById('app').hidden = false;
+  document.getElementById('who').textContent = `${ME.name} · ${ME.role}`;
+  connectWS();
+  await Promise.all([refreshState(), loadIncidents(), loadActions(),
+                     loadLinks(), refreshAI(), loadDashboard(),
+                     loadNotifications(), loadExecuted()]);
+}
+
+// ── dashboard (KPIs painted immediately, not only from the WS push) ──────
+async function loadDashboard(){
+  const d = await api('/api/dashboard');
+  DASHBOARD = d;
+  paintKPIs(Object.fromEntries(
+    Object.entries(d.kpis).filter(([,v]) => typeof v === 'number')));
+}
+let DASHBOARD = null;
+
+async function loadNotifications(){
+  const d = await api('/api/notifications');
+  document.getElementById('notif').textContent =
+    d.unread ? `${d.unread} unread` : 'no notifications';
+}
+
+// ── live feed ──────────────────────────────────────────────────────────
+function connectWS(){
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  WS = new WebSocket(`${proto}://${location.host}/ws?access_token=${TOKEN}`);
+  const p = document.getElementById('wsp');
+  WS.onopen  = () => { p.textContent='ws live'; p.className='pill on'; };
+  WS.onclose = () => { p.textContent='ws closed'; p.className='pill off'; };
+  WS.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    feed(m.kind, m.payload);
+    if (m.kind === 'counters') paintKPIs(m.payload);
+    if (['incident.updated','approval.required','demo.step',
+         'alert.flood','ai.verdicts'].includes(m.kind)) {
+      loadIncidents(); loadActions();
+    }
+    if (m.kind === 'demo.step') refreshState();
+    if (m.kind === 'approval.required' || m.kind === 'escalation') loadNotifications();
+  };
+}
+
+function feed(kind, payload){
+  const el = document.getElementById('feed');
+  const d = document.createElement('div');
+  const bits = payload && (payload.message || payload.title ||
+                           payload.rule_title || payload.assessment || '');
+  d.innerHTML = `<b>${kind}</b> ${String(bits).slice(0,120)}`;
+  el.prepend(d);
+  while (el.childNodes.length > 120) el.removeChild(el.lastChild);
+}
+
+// ── panels ─────────────────────────────────────────────────────────────
+function paintKPIs(c){
+  const k = document.getElementById('kpis');
+  k.innerHTML = Object.entries(c)
+    .filter(([,v]) => typeof v === 'number' || typeof v === 'string')
+    .map(([n,v]) => `<div><b>${v}</b><span>${n.replace(/_/g,' ')}</span></div>`)
+    .join('');
+}
+
+async function refreshState(){
+  const st = await api('/api/demo/state');
+  document.getElementById('stepname').textContent =
+    `step ${st.step}/${st.total} — ${st.title}`;
+  document.getElementById('expect').textContent = st.expect || '';
+}
+
+async function refreshAI(){
+  const s = await api('/api/settings');
+  const on = s.ai?.ai_enabled ?? s.ai_enabled ?? true;
+  const p = document.getElementById('aip');
+  p.textContent = on ? 'AI on' : 'AI OFF';
+  p.className = 'pill ' + (on ? 'on' : 'off');
+  if (s.autonomy) document.getElementById('autonomy').value = s.autonomy;
+}
+
+async function toggleAI(){
+  const s = await api('/api/settings');
+  const on = s.ai?.ai_enabled ?? s.ai_enabled ?? true;
+  await api('/api/settings/ai','PUT',{enabled:!on});
+  await refreshAI();
+  show('ai toggled', Promise.resolve({ai_enabled:!on,
+    note:'Re-run the demo. The verdict must not change.'}));
+}
+
+const band = r => r>=80?'hi':r>=45?'mid':'lo';
+
+async function loadIncidents(){
+  const d = await api('/api/incidents?status=open');
+  document.getElementById('inc').innerHTML = (d.items||[]).map(i=>`
+    <tr class="click ${i.incident_id===SEL?'sel':''}" onclick="select('${i.incident_id}')">
+      <td class="${band(i.risk_score)}">${i.risk_score.toFixed(0)}</td>
+      <td>${(i.stages||[]).filter(Boolean).length}/7</td>
+      <td class="muted">${i.agreement||'—'}${i.needs_review?' ⚠':''}</td>
+      <td>${i.title}</td></tr>`).join('')
+    || '<tr><td colspan=4 class="muted">none — run the demo</td></tr>';
+}
+
+const TABS = [
+  ['Summary',      id=>`/api/incidents/${id}`],
+  ['Verdicts',     id=>`/api/incidents/${id}/verdicts`],
+  ['Explanation',  id=>`/api/incidents/${id}/explanation`],
+  ['Agent trail',  id=>`/api/incidents/${id}/agent-pipeline`],
+  ['AI share',     id=>`/api/incidents/${id}/ai-contribution`],
+  ['Graph',        id=>`/api/incidents/${id}/graph`],
+  ['Precedent',    id=>`/api/incidents/${id}/trust-time-machine`],
+  ['Alternatives', id=>`/api/incidents/${id}/alternatives`],
+  ['Plan',         id=>`/api/incidents/${id}/remediation`],
+];
+
+function select(id){
+  SEL = id;
+  document.getElementById('selid').textContent = id;
+  document.getElementById('tabs').innerHTML = TABS.map(([n],ix)=>
+    `<button onclick="tab(${ix},this)">${n}</button>`).join('');
+  loadIncidents();
+  tab(0, document.querySelector('#tabs button'));
+}
+
+async function tab(ix, btn){
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+  const el = document.getElementById('detail');
+  el.textContent = 'loading…';
+  try { el.textContent = JSON.stringify(await api(TABS[ix][1](SEL)), null, 2); }
+  catch(e){ el.textContent = `${e.status||''} ${e.message}`; }
+}
+
+function withSel(fn){
+  if (!SEL) return show('no incident', Promise.resolve(
+    {error:'Select an incident in the table first.'}));
+  return fn(SEL);
+}
+
+async function loadActions(){
+  const d = await api('/api/actions?status=pending');
+  const rows = d.items || [];
+  document.getElementById('acts').innerHTML = rows.map(a=>`
+    <tr><td>${a.tier}</td><td>${a.label||a.kind}</td><td>${a.target}</td>
+    <td>
+      <button onclick="act('${a.action_id}','approve')">Approve</button>
+      <button onclick="act('${a.action_id}','reject')">Reject</button>
+      <button onclick="act('${a.action_id}','escalate')">Escalate</button>
+      <button onclick="act('${a.action_id}','dismiss')">Dismiss</button>
+      <button onclick="overrideAct('${a.action_id}')">Override</button>
+    </td></tr>`).join('')
+    || '<tr><td colspan=4 class="muted">nothing awaiting approval</td></tr>';
+  loadExecuted();
+}
+
+async function loadExecuted(){
+  const d = await api('/api/actions?status=executed');
+  const rows = (d.items || []).filter(a => a.reversible);
+  document.getElementById('exec').innerHTML = rows.map(a=>`
+    <tr><td>${a.tier}</td><td>${a.label||a.kind}</td><td>${a.target}</td>
+    <td>${a.rollback_expires_at ? 'until '+a.rollback_expires_at.slice(0,16).replace('T',' ') : 'no expiry'}</td>
+    <td><button onclick="act('${a.action_id}','rollback')">Rollback</button></td></tr>`).join('')
+    || '<tr><td colspan=5 class="muted">nothing executed and reversible</td></tr>';
+}
+
+async function act(id, what){
+  try {
+    if (what === 'rollback') {
+      await show(what, api(`/api/actions/${id}/rollback`,'POST'));
+    } else {
+      const body = what==='approve' ? {reason:'Approved from reference client'}
+                 : what==='reject'  ? {reason:'Rejected from reference client'}
+                 : what==='dismiss' ? {reason:'Dismissed from reference client'}
+                 : {to_role:'manager', reason:'Escalated from reference client'};
+      await show(what, api(`/api/actions/${id}/${what}`,'POST',body));
+    }
+  } catch(e){ /* shown */ }
+  loadActions();
+}
+
+async function overrideAct(id){
+  const chosen = prompt(
+    'Chosen action (one of: collect_forensics, snapshot_host, '+
+    'enrich_indicator, notify_analyst, quarantine_email, block_hash, '+
+    'force_reauth, revoke_session, suspend_account, isolate_host, '+
+    'block_domain, mass_isolate, disable_service_account):');
+  if (!chosen) return;
+  try {
+    await show('override', api(`/api/actions/${id}/override`,'POST',
+      {chosen_action: chosen.trim(),
+       reason: 'Overridden from reference client'}));
+  } catch(e){ /* shown */ }
+  loadActions();
+}
+
+async function runSearch(){
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  await show('search: '+q, api(`/api/search?q=${encodeURIComponent(q)}`));
+}
+
+async function loadLinks(){
+  const d = await api('/api/assist/links?status=proposed');
+  document.getElementById('links').innerHTML = (d.items||[]).map(l=>`
+    <tr><td>${l.confidence}</td>
+    <td class="muted">…${l.incident_a.slice(-6)} ↔ …${l.incident_b.slice(-6)}<br>${l.reason||''}</td>
+    <td><button onclick="linkDo(${l.id},'accept')">Accept</button>
+        <button onclick="linkDo(${l.id},'decline')">Decline</button></td></tr>`).join('')
+    || '<tr><td colspan=3 class="muted">no proposals</td></tr>';
+}
+
+async function linkDo(id, what){
+  try { await show('link '+what,
+        api(`/api/assist/links/${id}/${what}`,'POST',{reason:'reference client'})); }
+  catch(e){}
+  loadLinks(); loadIncidents();
+}
+
+async function show(title, promise){
+  document.getElementById('rtitle').textContent = title;
+  const el = document.getElementById('out');
+  el.textContent = 'working…';
+  try {
+    const d = await promise;
+    el.textContent = JSON.stringify(d, null, 2);
+    return d;
+  } catch(e){
+    el.textContent = `${e.status||''} ${e.message}\n\n` +
+      JSON.stringify(e.data||{}, null, 2);
+    throw e;
+  }
+}
+
+async function afterDemo(st){
+  await refreshState();
+  await Promise.all([loadIncidents(), loadActions(), loadLinks(),
+                     loadDashboard(), loadNotifications()]);
+  return st;
+}
+
+if (TOKEN) start().catch(()=>logout());
+</script>

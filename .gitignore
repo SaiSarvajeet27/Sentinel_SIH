@@ -1,0 +1,13 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets — belt and suspenders on top of backend/.gitignore and
+# frontend/.gitignore, which already exclude these in their own trees.
+.env
+.env.*
+!.env.example
+*.pem
+*.key

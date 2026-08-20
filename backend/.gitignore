@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.db
+*.db-journal
+.env
+.venv/
+db/ledger_key.pem
+db/jwt_secret.key

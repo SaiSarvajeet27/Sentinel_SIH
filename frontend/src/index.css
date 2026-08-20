@@ -1,0 +1,242 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+/* DARK THEME (Default) */
+:root, .dark, [data-theme="dark"] {
+  --color-soc-bg: #020817;
+  --color-soc-page: #030B16;
+  --color-soc-sidebar: #050B16;
+  --color-soc-header: #050B16;
+  --color-soc-card: #071426;
+  --color-soc-secondaryCard: #09182A;
+  --color-soc-elevated: #0B1C31;
+  --color-soc-cardHover: #0E223B;
+  --color-soc-border: #17304A;
+  --color-soc-borderLight: #1C3B59;
+  --color-soc-borderSubtle: rgba(28, 59, 89, 0.4);
+  
+  --color-soc-accent: #1683FF;
+  --color-soc-accentBlue: #2196FF;
+  --color-soc-cyan: #00C6FF;
+  --color-soc-ai: #8B5CF6;
+  --color-soc-aiDark: #7C3AED;
+  --color-soc-textPrimary: #F8FAFC;
+  --color-soc-textSecondary: #94A3B8;
+  --color-soc-textMuted: #64748B;
+  
+  --color-severity-critical: #EF4444;
+  --color-severity-high: #F97316;
+  --color-severity-medium: #F59E0B;
+  --color-severity-low: #3B82F6;
+  --color-severity-info: #64748B;
+  --color-severity-success: #22C55E;
+
+  --soc-shadow-card: 0 4px 16px -2px rgba(0, 0, 0, 0.5);
+  --soc-shadow-elevated: 0 8px 24px -4px rgba(0, 0, 0, 0.6);
+  --soc-table-hover: #09182A;
+  --soc-table-header: #050B16;
+}
+
+/* LIGHT THEME (Enterprise Daylight) */
+.light, [data-theme="light"] {
+  --color-soc-bg: #F4F7FB;
+  --color-soc-page: #EEF3F8;
+  --color-soc-sidebar: #EAEFF5;
+  --color-soc-header: #FFFFFF;
+  --color-soc-card: #FFFFFF;
+  --color-soc-secondaryCard: #F8FAFC;
+  --color-soc-elevated: #FFFFFF;
+  --color-soc-cardHover: #F1F7FF;
+  --color-soc-border: #DCE5EF;
+  --color-soc-borderLight: #E2E8F0;
+  --color-soc-borderSubtle: rgba(220, 229, 239, 0.6);
+  
+  --color-soc-accent: #1677FF;
+  --color-soc-accentBlue: #2196FF;
+  --color-soc-cyan: #009ED8;
+  --color-soc-ai: #7C3AED;
+  --color-soc-aiDark: #6D28D9;
+  --color-soc-textPrimary: #0F172A;
+  --color-soc-textSecondary: #334155;
+  --color-soc-textMuted: #64748B;
+  
+  --color-severity-critical: #DC2626;
+  --color-severity-high: #EA580C;
+  --color-severity-medium: #D97706;
+  --color-severity-low: #2563EB;
+  --color-severity-info: #64748B;
+  --color-severity-success: #16A34A;
+
+  --soc-shadow-card: 0 2px 8px rgba(15, 23, 42, 0.05);
+  --soc-shadow-elevated: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --soc-table-hover: #F1F7FF;
+  --soc-table-header: #F8FAFC;
+}
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+  
+  --color-soc-bg: var(--color-soc-bg);
+  --color-soc-page: var(--color-soc-page);
+  --color-soc-sidebar: var(--color-soc-sidebar);
+  --color-soc-header: var(--color-soc-header);
+  --color-soc-card: var(--color-soc-card);
+  --color-soc-secondaryCard: var(--color-soc-secondaryCard);
+  --color-soc-elevated: var(--color-soc-elevated);
+  --color-soc-cardHover: var(--color-soc-cardHover);
+  --color-soc-border: var(--color-soc-border);
+  --color-soc-borderLight: var(--color-soc-borderLight);
+  --color-soc-borderSubtle: var(--color-soc-borderSubtle);
+  
+  --color-soc-accent: var(--color-soc-accent);
+  --color-soc-accentBlue: var(--color-soc-accentBlue);
+  --color-soc-cyan: var(--color-soc-cyan);
+  --color-soc-ai: var(--color-soc-ai);
+  --color-soc-aiDark: var(--color-soc-aiDark);
+  --color-soc-textPrimary: var(--color-soc-textPrimary);
+  --color-soc-textSecondary: var(--color-soc-textSecondary);
+  --color-soc-textMuted: var(--color-soc-textMuted);
+  
+  --color-severity-critical: var(--color-severity-critical);
+  --color-severity-high: var(--color-severity-high);
+  --color-severity-medium: var(--color-severity-medium);
+  --color-severity-low: var(--color-severity-low);
+  --color-severity-info: var(--color-severity-info);
+  --color-severity-success: var(--color-severity-success);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-soc-bg);
+    color: var(--color-soc-textPrimary);
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  input, button, select, textarea {
+    font-family: inherit;
+  }
+}
+
+/* Custom SOC Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-soc-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-soc-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-soc-borderLight);
+}
+
+/* Enterprise SOC Card Depth and Elevation */
+.soc-card {
+  background-color: var(--color-soc-card);
+  border: 1px solid var(--color-soc-border);
+  border-radius: 0.75rem;
+  box-shadow: var(--soc-shadow-card);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.soc-card-hover {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.soc-card-hover:hover {
+  background-color: var(--color-soc-cardHover);
+  border-color: var(--color-soc-borderLight);
+}
+
+.soc-elevated {
+  background-color: var(--color-soc-elevated);
+  border: 1px solid var(--color-soc-border);
+  box-shadow: var(--soc-shadow-elevated);
+}
+
+/* React Flow theme overrides */
+.dark .react-flow__renderer,
+:root .react-flow__renderer {
+  background: #020817 !important;
+}
+
+.light .react-flow__renderer {
+  background: #F4F7FB !important;
+}
+
+.dark .react-flow__controls,
+:root .react-flow__controls {
+  background: #071426 !important;
+  border: 1px solid #17304A !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important;
+}
+
+.light .react-flow__controls {
+  background: #FFFFFF !important;
+  border: 1px solid #DCE5EF !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+}
+
+.dark .react-flow__controls-button,
+:root .react-flow__controls-button {
+  background: #071426 !important;
+  border-bottom: 1px solid #17304A !important;
+  color: #94A3B8 !important;
+  fill: #94A3B8 !important;
+}
+
+.light .react-flow__controls-button {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #DCE5EF !important;
+  color: #64748B !important;
+  fill: #64748B !important;
+}
+
+.dark .react-flow__controls-button:hover,
+:root .react-flow__controls-button:hover {
+  background: #0B1C31 !important;
+  color: #1683FF !important;
+  fill: #1683FF !important;
+}
+
+.light .react-flow__controls-button:hover {
+  background: #F1F7FF !important;
+  color: #1677FF !important;
+  fill: #1677FF !important;
+}
+
+.react-flow__edge-path {
+  stroke: var(--color-soc-accent) !important;
+  stroke-width: 2px !important;
+}
+
+.react-flow__edge.animated path {
+  stroke: var(--color-soc-cyan) !important;
+}
+
+/* Technical SOC Log & Code Panels */
+.soc-code-block {
+  background-color: #000000;
+  color: #34D399;
+  border: 1px solid #17304A;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.light .soc-code-block,
+[data-theme="light"] .soc-code-block {
+  background-color: #F8FAFC;
+  color: #047857;
+  border: 1px solid #DCE5EF;
+}
+
