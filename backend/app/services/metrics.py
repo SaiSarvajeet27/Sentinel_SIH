@@ -167,7 +167,13 @@ def flush_counters(s: Session) -> None:
 # ══════════════════════════════════════════════════════════════════════
 
 def ops_summary(s: Session) -> dict:
-    incidents = s.query(Incident).all()
+    # Exclude the 36 seeded "(historical)" precedent-panel incidents — they
+    # carry fabricated first_seen dates up to 180 days in the past against a
+    # created_at of "whenever bootstrap ran", which would otherwise blow up
+    # MTTD into something like "83 days" and dilute the containment rate
+    # with synthetic statuses that have nothing to do with real operations.
+    incidents = (s.query(Incident)
+                  .filter(~Incident.incident_id.startswith("inc_hist_")).all())
     contained = [i for i in incidents if i.status in ("contained", "closed")]
 
     detect_times, respond_times = [], []

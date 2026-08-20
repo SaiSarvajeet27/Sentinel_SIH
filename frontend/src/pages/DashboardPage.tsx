@@ -83,9 +83,10 @@ export const DashboardPage: React.FC = () => {
       time: inc.updatedAt ? new Date(inc.updatedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '',
     }));
 
-  const worstRisk = incidents.length ? Math.max(...incidents.map((i) => i.riskScore)) : 0;
+  const openIncidents = incidents.filter((i) => i.status === 'OPEN' || i.status === 'INVESTIGATING');
+  const worstRisk = openIncidents.length ? Math.max(...openIncidents.map((i) => i.riskScore)) : 0;
   const riskLabel = worstRisk >= 80 ? 'High Risk' : worstRisk >= 45 ? 'Elevated Risk' : worstRisk > 0 ? 'Low Risk' : 'Nominal';
-  const topIncidentId = [...incidents].sort((a, b) => b.riskScore - a.riskScore)[0]?.id;
+  const topIncidentId = [...openIncidents].sort((a, b) => b.riskScore - a.riskScore)[0]?.id;
 
   const ops = dashboardExtras.opsSummary;
   const fmtDuration = (secs?: number) => {

@@ -1203,7 +1203,9 @@ def search(q: str = Query(min_length=1), s: Session = Depends(db_dep)):
     makes it a command palette rather than a search box."""
     like = f"%{q}%"
     incidents = (s.query(Incident)
-                  .filter(Incident.title.ilike(like)).limit(5).all())
+                  .filter(Incident.title.ilike(like),
+                          ~Incident.incident_id.startswith("inc_hist_"))
+                  .limit(5).all())
     return {
         "incidents": [{"id": i.incident_id, "title": i.title,
                        "risk": i.risk_score} for i in incidents],
@@ -1224,7 +1226,10 @@ def search(q: str = Query(min_length=1), s: Session = Depends(db_dep)):
 @app.get("/api/feedback")
 def list_feedback(limit: int = 50, s: Session = Depends(db_dep)):
     from app.models import AppUser, Feedback
-    rows = (s.query(Feedback).order_by(Feedback.created_at.desc())
+    # analyst == "historic" marks the synthetic verdicts seed_history()
+    # attaches to the 36 fake precedent incidents — real feedback only here.
+    rows = (s.query(Feedback).filter(Feedback.analyst != "historic")
+             .order_by(Feedback.created_at.desc())
              .limit(limit).all())
     incident_ids = {r.incident_id for r in rows}
     titles = {i.incident_id: i.title for i in
@@ -1246,7 +1251,7 @@ def list_feedback(limit: int = 50, s: Session = Depends(db_dep)):
 @app.get("/api/feedback/stats")
 def feedback_stats(s: Session = Depends(db_dep)):
     from app.models import Feedback
-    rows = s.query(Feedback).all()
+    rows = s.query(Feedback).filter(Feedback.analyst != "historic").all()
     total = len(rows)
     confirmed = sum(1 for r in rows if r.verdict == "tp")
     false_positives = sum(1 for r in rows if r.verdict == "fp")
