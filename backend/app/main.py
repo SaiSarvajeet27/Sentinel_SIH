@@ -127,6 +127,37 @@ async def _metrics_flusher() -> None:
             log.exception("metrics flush failed")
 
 
+async def _seconds_since_last_generation() -> float | None:
+    """When the most recent cycle actually started, in seconds ago.
+
+    None if there has never been one. Read from the `runs` table rather
+    than in-memory state, because in-memory state does not survive a
+    restart — without this, restarting the backend (routine during
+    development, or after a crash) would look identical to "no cycle has
+    ever run" and fire one immediately regardless of how recently the last
+    one actually used a Gemini call.
+    """
+    from app.db import get_session
+    from app.models import Run
+    try:
+        with get_session() as s:
+            last = (s.query(Run).order_by(Run.started_at.desc()).first())
+            if not last or not last.started_at:
+                return None
+            from datetime import datetime, timezone
+            started_at = last.started_at
+            # SQLite hands back naive datetimes even for columns declared
+            # DateTime(timezone=True) — the value itself is UTC (that's all
+            # this app ever writes), it just loses the tzinfo tag on the
+            # round trip, which makes subtracting an aware "now" raise.
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - started_at).total_seconds()
+    except Exception:                                    # noqa: BLE001
+        log.exception("could not read last generation time; assuming none")
+        return None
+
+
 async def _auto_generate_loop() -> None:
     """Keep the SOC live without anyone clicking a demo Play button.
 
@@ -134,12 +165,35 @@ async def _auto_generate_loop() -> None:
     Gemini-authored attack plan, real detection, real dual-path AI
     analysis, real remediation proposal — on a timer, entirely server-side.
     Skips a cycle if one is already running rather than overlapping two.
+
+    Gemini's free-tier daily quota is small (observed as low as ~20
+    requests/day for this one project) and this loop is the only thing
+    that calls it in normal operation, at one call per cycle — but going
+    over that quota does not break anything: app.llm.router falls back
+    Gemini → Groq → Ollama automatically, so a cycle beyond the daily
+    Gemini allowance still gets a fresh AI-authored scenario, just from
+    Groq instead. The one real risk was wasted quota, not broken
+    generation: every backend restart used to fire an immediate cycle
+    regardless of how recently the last one ran, which during active
+    development (many restarts in a day) could burn through the daily
+    Gemini allowance on restarts alone. Fixed below by checking when the
+    last cycle *actually* ran, from the database, before deciding whether
+    "now" is due.
     """
     if not config.AUTO_GENERATE_ENABLED:
         log.info("auto-generation disabled (AUTO_GENERATE_ENABLED=false)")
         return
     interval = max(1, config.AUTO_GENERATE_INTERVAL_MINUTES) * 60
-    await asyncio.sleep(15)          # let startup finish before the first cycle
+    await asyncio.sleep(15)          # let startup finish before the first check
+
+    elapsed = await _seconds_since_last_generation()
+    if elapsed is not None and elapsed < interval:
+        wait = interval - elapsed
+        log.info("auto-generation: last cycle was %.0fs ago, waiting %.0fs "
+                  "before the next one instead of firing immediately",
+                  elapsed, wait)
+        await asyncio.sleep(wait)
+
     while True:
         try:
             if not demo.state.playing:
@@ -1207,9 +1261,21 @@ def set_ai(body: AIBody, request: Request, s: Session = Depends(db_dep)):
 def ai_usage():
     """Free-tier budget, honestly reported. One batched call per incident
     instead of six, plus a content-hash cache, is what keeps this inside
-    the limits."""
+    the limits.
+
+    `quota.status()` and `llm_router.provider_status()` each return a
+    "providers" key — spreading them together the naive way lets whichever
+    dict comes second silently overwrite the other's "providers", which
+    was quietly discarding the actual remaining-calls-today numbers this
+    endpoint exists to report. Merged per-provider instead."""
     from app.llm import quota
-    return {**quota.status(), **llm_router.provider_status()}
+    budget = quota.status()
+    status = llm_router.provider_status()
+    providers = {
+        name: {**status["providers"].get(name, {}), **budget["providers"].get(name, {})}
+        for name in set(status["providers"]) | set(budget["providers"])
+    }
+    return {**status, "providers": providers, "cache": budget["cache"]}
 
 
 @app.get("/api/notifications")

@@ -143,12 +143,16 @@ SIM_USERS = int(os.getenv("SIM_USERS", 25))
 # Runs a full attack scenario (fresh Gemini-authored plan → real detection →
 # real dual-path AI analysis → real remediation proposal) on its own, on a
 # timer, so the SOC has live incidents without anyone clicking a "demo" Play
-# button. Each cycle spends exactly one Gemini call — at the default 90
-# minutes that is 16 cycles/day, comfortably under a typical ~20/day Gemini
-# free-tier project quota. Lower this and you may exhaust that quota before
-# the day is over; raise it if new incidents feel too infrequent.
+# button. Each cycle spends exactly one Gemini call — at the default 120
+# minutes that is 12 cycles/day, comfortably under a typical ~20/day Gemini
+# free-tier project quota, with margin to spare for restarts or a manual
+# "generate now". Going over the quota does not break generation — the
+# router (app/llm/router.py) falls back Gemini → Groq → Ollama on its own,
+# so a cycle beyond Gemini's daily allowance still gets a fresh AI-authored
+# scenario, just from Groq. Lower this for more frequent incidents at the
+# cost of that margin; raise it if new incidents feel too frequent.
 AUTO_GENERATE_ENABLED = os.getenv("AUTO_GENERATE_ENABLED", "true").lower() == "true"
-AUTO_GENERATE_INTERVAL_MINUTES = int(os.getenv("AUTO_GENERATE_INTERVAL_MINUTES", 90))
+AUTO_GENERATE_INTERVAL_MINUTES = int(os.getenv("AUTO_GENERATE_INTERVAL_MINUTES", 120))
 
 # ── Correlation tuning ──────────────────────────────────────────────────
 CLUSTER_HOP_BUDGET = 3.0        # weighted path cost, not hop count

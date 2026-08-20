@@ -1,16 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, User, Bell, Terminal, Save, Check, Sliders, Lock, ShieldCheck, Sun, Moon } from 'lucide-react';
 import { useSOC } from '../components/common/SOCContext';
 import { useTheme } from '../components/common/ThemeContext';
 import { AutonomyMode } from '../types/soc';
 import { AIStatusBadge } from '../components/common/AIStatusBadge';
-import { API_BASE } from '../services/backendApi';
+import { API_BASE, backendApi } from '../services/backendApi';
+
+interface AIUsage {
+  providers: Record<string, { available: boolean; model: string; day?: number; minute?: number }>;
+}
 
 export const SettingsPage: React.FC = () => {
   const { autonomyMode, setAutonomyMode, authUser } = useSOC();
   const { theme, setTheme } = useTheme();
   const [saved, setSaved] = useState(false);
+  const [aiUsage, setAiUsage] = useState<AIUsage | null>(null);
   const wsBase = API_BASE.replace(/^http/, 'ws');
+
+  useEffect(() => {
+    backendApi.aiUsage().then(setAiUsage).catch(() => setAiUsage(null));
+  }, []);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,6 +255,31 @@ export const SettingsPage: React.FC = () => {
                 <span className="text-emerald-500 font-bold">ACTIVE</span>
               </div>
             </div>
+
+            {aiUsage && (
+              <div className="p-3 rounded-lg bg-soc-secondaryCard border border-soc-border space-y-1.5 text-[10px]">
+                <div className="text-soc-textMuted font-bold uppercase tracking-wider text-[9px] mb-0.5">
+                  Free-Tier Calls Remaining Today
+                </div>
+                {(['gemini', 'groq'] as const).map((name) => {
+                  const p = aiUsage.providers[name];
+                  if (!p || p.day === undefined) return null;
+                  return (
+                    <div key={name} className="flex items-center justify-between">
+                      <span className="text-soc-textSecondary font-bold capitalize">{name}:</span>
+                      <span className={`font-bold ${p.day === 0 ? 'text-red-500' : p.day <= 3 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                        {p.day} left
+                      </span>
+                    </div>
+                  );
+                })}
+                <p className="text-soc-textMuted text-[9px] leading-relaxed pt-0.5">
+                  Live incident generation uses one Gemini call per cycle. If that
+                  runs out, it automatically falls back to Groq — new incidents
+                  keep coming either way.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="pt-2.5 border-t border-soc-border">

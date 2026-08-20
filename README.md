@@ -71,6 +71,16 @@ this works with nothing else installed. Point `DATABASE_URL` in `.env` at a
 local Postgres instance instead if you want the production-shaped path —
 see `backend/.env.example` for the connection string.
 
+There's no "start demo" button to click — shortly after the backend
+starts, and then every `AUTO_GENERATE_INTERVAL_MINUTES` (default 120)
+after that, it generates a complete new incident on its own: a fresh
+Gemini-authored attack plan, real detection, real dual-path AI analysis,
+and a real remediation proposal waiting in Approvals. It tracks when the
+last cycle actually ran (in the database, not in memory), so restarting
+the backend doesn't fire an extra one — it just picks up wherever it left
+off. Set `AUTO_GENERATE_ENABLED=false` in `.env` if you'd rather control
+exactly when that happens.
+
 ---
 
 ## Getting API keys
@@ -80,7 +90,7 @@ people get stuck on, so here it is click-by-click. **You can also skip this
 whole section** — see [Running without any AI key](#running-without-any-ai-key)
 at the bottom.
 
-### 1. Gemini key (used for one thing: generating the demo scenario)
+### 1. Gemini key (used for one thing: generating each new incident scenario)
 
 1. Go to **https://aistudio.google.com/apikey** and sign in with any Google
    account.
@@ -97,7 +107,12 @@ at the bottom.
 
 Free-tier quota is small and varies per project — some projects get as few
 as ~20 requests/day for `gemini-2.5-flash`. That's fine: this app only ever
-spends **one** Gemini call per demo run. If you want to check your actual
+spends **one** Gemini call per incident-generation cycle, and the default
+120-minute interval (`AUTO_GENERATE_INTERVAL_MINUTES`) keeps that around
+12 cycles/day, with margin to spare. Even going over the quota doesn't
+stop anything — the router falls back to Groq automatically, so
+generation keeps producing fresh AI-authored scenarios either way (see
+[AI models used](#ai-models-used)). If you want to check your actual
 limit, it's shown at https://aistudio.google.com/rate-limit.
 
 ### 2. Groq key (used for everything else — explanations, analysis, remediation)
@@ -157,7 +172,7 @@ rate-limited (`groq → gemini → ollama`).
 
 | Provider | Model | Used for | Notes |
 |---|---|---|---|
-| **Google Gemini** | `gemini-2.5-flash` | One-shot synthetic scenario generation at the start of a demo run | Free-tier quota is small and project-specific (as low as ~20 requests/day observed) — kept to a single call per run for that reason |
+| **Google Gemini** | `gemini-2.5-flash` | One-shot synthetic scenario generation at the start of each auto-generated incident cycle | Free-tier quota is small and project-specific (as low as ~20 requests/day observed) — kept to a single call per cycle for that reason, and falls back to Groq/Ollama automatically if the daily quota is used up |
 | **Groq** | `openai/gpt-oss-120b` | Everything that repeats: alert explanation, incident analysis, both-sides verdict assessment, triage of unusual events, campaign-link correlation, remediation plan drafting | Carries the bulk of the AI workload; Groq's free tier is a larger, fixed daily allowance |
 | **Ollama** (local) | `qwen2.5:7b` | Fully offline fallback for every task above | No API key, no network call — `python scripts/use_local.py` switches every `LLM_*` route to it in one command, for an air-gapped demo |
 
@@ -175,7 +190,7 @@ Everything below is one call-site each, selected by `TASK_PROVIDER` in
 
 | Feature — what you see in the app | Backend task | Default provider |
 |---|---|---|
-| Generating the synthetic attack scenario for a demo run | `scenario` | Gemini |
+| Generating each new auto-generated incident's attack scenario | `scenario` | Gemini |
 | "Ask Why" panel — reasoning steps, evidence, why-act/why-wait, alternatives | `explain` | Groq |
 | The AI's own independent read of an incident (the "second analyst" in the both-sides comparison) | `analysis` | Groq |
 | The AI's own independent risk verdict, blind to the rules' score — reconciled against the deterministic score | `assess` | Groq |
