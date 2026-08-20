@@ -244,21 +244,34 @@ CORS failure that actually means "the origins don't match."
 
 ## Default login
 
-`scripts/bootstrap.py` creates one account and prints its password to the
-terminal on first run (or generates one if `BOOTSTRAP_ADMIN_PASSWORD` is
-left blank in `.env`). The database already seeded in this repo uses:
+`scripts/bootstrap.py` creates three accounts, one per role, on first run —
+their passwords come from `backend/.env.example`, which ships with fixed,
+known values so the whole team gets the same working logins instead of
+each person's bootstrap run generating its own random, unshared password:
 
-| Email | Role | Can approve |
-|---|---|---|
-| `admin@sentinel.local` | `manager` | Tier 0–3 (including two-person Tier 3 actions) |
+| Email | Password | Role | Can approve |
+|---|---|---|---|
+| `admin@sentinel.local` | `SecureAdminPass123!` | `manager` | Tier 2 and Tier 3 (as one of two required signers) |
+| `simran@sentinel.local` | `SecureSeniorPass123!` | `senior_analyst` | Tier 2 only, not Tier 3 |
+| `arjun@sentinel.local` | `SecureAnalystPass123!` | `analyst` | Nothing — Tier 0/1 actions auto-execute and never reach the approval queue |
+
+Log in as `arjun@sentinel.local` and try to approve a Tier-2 action to see
+the boundary enforced server-side, not just hidden in the UI.
+
+If your teammates report these as invalid, it's almost always one of two
+things: (1) their `.env` still has the passwords blank, which makes
+`bootstrap.py` generate — and only ever print once — a random password
+instead of using the fixed one above, or (2) their database already had
+accounts in it from an earlier bootstrap run before `.env` was set up
+correctly, and bootstrap only creates the three accounts on a genuinely
+empty database — it won't retroactively fix already-existing ones. Delete
+`sentinel.db` and re-run `python -m scripts.bootstrap` after confirming
+`.env` matches `.env.example`'s bootstrap section to reset to the
+credentials above.
 
 The role model has three tiers (`analyst` → `senior_analyst` → `manager`),
 each with strictly increasing approval authority — see
-`backend/app/config.py` for the exact permission table. Create additional
-accounts by re-running bootstrap with `BOOTSTRAP_SENIOR_EMAIL` /
-`BOOTSTRAP_ANALYST_EMAIL` set in `.env` to demonstrate the tier boundaries
-(an `analyst` account genuinely cannot approve what a `manager` can — it's
-enforced server-side, not hidden in the UI).
+`backend/app/config.py` for the exact permission table.
 
 ---
 
