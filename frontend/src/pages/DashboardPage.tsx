@@ -152,7 +152,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-end justify-between">
             <div>
               <div className="text-2xl font-extrabold text-soc-textPrimary tracking-tight">{metrics.totalEvents.toLocaleString()}</div>
-              <div className="text-[11px] text-soc-textMuted mt-0.5 font-medium">real backend telemetry</div>
+              <div className="text-[11px] text-soc-textMuted mt-0.5 font-medium">across all sources</div>
             </div>
           </div>
         </div>
@@ -184,7 +184,7 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-end justify-between">
             <div>
               <div className="text-2xl font-extrabold text-soc-textPrimary tracking-tight">{metrics.pendingApprovals}</div>
-              <div className="text-[11px] text-soc-textMuted mt-0.5 font-medium">tier 2+ awaiting a human</div>
+              <div className="text-[11px] text-soc-textMuted mt-0.5 font-medium">awaiting authorization</div>
             </div>
           </div>
         </div>
@@ -200,7 +200,9 @@ export const DashboardPage: React.FC = () => {
           <div className="flex items-end justify-between">
             <div>
               <div className="text-2xl font-extrabold text-soc-textPrimary tracking-tight">{dashboardExtras.systemHealthScore}%</div>
-              <div className="text-[11px] text-soc-textMuted mt-0.5 font-medium">db, AI provider, rules, ledger</div>
+              <div className="text-[11px] text-soc-textMuted mt-0.5 font-medium">
+                {dashboardExtras.systemHealthScore >= 100 ? 'all systems operational' : 'degraded — see Settings'}
+              </div>
             </div>
           </div>
         </div>
@@ -317,7 +319,7 @@ export const DashboardPage: React.FC = () => {
           <div>
             <div className="text-xs font-bold text-soc-ai">{riskLabel}</div>
             <p className="text-[11px] text-soc-textSecondary mt-0.5 max-w-[170px]">
-              {worstRisk > 0 ? `Highest open incident risk score, from the real deterministic + model scoring pipeline.` : 'No open incidents — nothing to score.'}
+              {worstRisk > 0 ? 'Highest-risk incident currently open.' : 'No open incidents right now.'}
             </p>
           </div>
         </div>
