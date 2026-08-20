@@ -31,7 +31,10 @@ SentinelSOC/
 
 ## Quick start
 
-Two terminals, backend first.
+Two terminals, backend first. If you just want the app running as fast as
+possible and don't care about AI yet, skip straight to step 3 with
+`AI_ENABLED=false` — you can add real keys later without reinstalling
+anything.
 
 ```bash
 # Terminal 1 — backend
@@ -39,7 +42,15 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate          # Windows. Use `source .venv/bin/activate` on macOS/Linux
 pip install -r requirements.txt
-copy .env.example .env          # then paste in a Gemini and/or Groq key — see below
+copy .env.example .env          # Windows. Use `cp .env.example .env` on macOS/Linux
+```
+
+Now open `backend/.env` in an editor and either paste in API keys (see
+[Getting API keys](#getting-api-keys) below — takes about 2 minutes per
+provider, both free, no credit card) or set `AI_ENABLED=false` to skip AI
+entirely for now. Then:
+
+```bash
 python -m scripts.bootstrap     # creates the database, seeds the org, prints login credentials
 python -m uvicorn app.main:app --port 8000
 ```
@@ -62,15 +73,87 @@ see `backend/.env.example` for the connection string.
 
 ---
 
+## Getting API keys
+
+Two providers, both free, neither requires a credit card. This is the part
+people get stuck on, so here it is click-by-click. **You can also skip this
+whole section** — see [Running without any AI key](#running-without-any-ai-key)
+at the bottom.
+
+### 1. Gemini key (used for one thing: generating the demo scenario)
+
+1. Go to **https://aistudio.google.com/apikey** and sign in with any Google
+   account.
+2. Click **"Create API key"**.
+3. Pick **"Create API key in new project"** if you don't already have a
+   Google Cloud project selected — a default one is created for you
+   automatically, no extra setup needed.
+4. Copy the key it shows you. Current keys start with `AQ.` (older ones
+   starting `AIza` still work, but Google is phasing that format out).
+5. Open `backend/.env` and paste it in:
+   ```bash
+   GEMINI_API_KEY=AQ.your-key-here
+   ```
+
+Free-tier quota is small and varies per project — some projects get as few
+as ~20 requests/day for `gemini-2.5-flash`. That's fine: this app only ever
+spends **one** Gemini call per demo run. If you want to check your actual
+limit, it's shown at https://aistudio.google.com/rate-limit.
+
+### 2. Groq key (used for everything else — explanations, analysis, remediation)
+
+1. Go to **https://console.groq.com/keys** and sign up or sign in (email,
+   Google, or GitHub all work).
+2. Click **"Create API Key"**.
+3. Give it any name (e.g. `sentinel-soc`) and click **Create**.
+4. Copy the key immediately — Groq only shows it to you once. It starts
+   with `gsk_`.
+5. Open `backend/.env` and paste it in:
+   ```bash
+   GROQ_API_KEY=gsk_your-key-here
+   ```
+
+Groq's free tier is a larger, published fixed daily allowance (not a
+per-project unknown like Gemini's), which is why this app routes almost
+everything through Groq — see [What each AI feature uses](#what-each-ai-feature-uses)
+below.
+
+### 3. Confirm both keys actually work
+
+From `backend/`, with the venv active:
+
+```bash
+python scripts/check_ai.py
+```
+
+This makes one cheap request per provider (costs 2–3 requests total against
+your daily quota) and tells you plainly which provider is reachable. It
+never prints the key back to the terminal.
+
+### Running without any AI key
+
+You don't need either key to run the app. Two options, both in `backend/.env`:
+
+- **`AI_ENABLED=false`** — the whole app runs with zero model calls. Every
+  screen still works: detection, governance, approvals, the audit ledger.
+  This is intentional, not a degraded mode — the project's core claim is
+  that unplugging the AI produces the *same* detection verdict, and this
+  setting is how you prove it.
+- **Local model, still `AI_ENABLED=true`** — install
+  [Ollama](https://ollama.com), run `ollama pull qwen2.5:7b`, then
+  `python scripts/use_local.py` from `backend/`. This rewrites every
+  `LLM_*` line in `.env` to route through your local Ollama instead of a
+  hosted API — no key, no network call, fully offline. `--hosted` switches
+  back.
+
+---
+
 ## AI models used
 
 The system runs three model providers behind one routing layer
 (`backend/app/llm/router.py`), selected per task in `.env`. Every task falls
 back automatically to the next provider in line if one is unavailable or
-rate-limited (`groq → gemini → ollama`), and the whole app can also run with
-**no model at all** (`AI_ENABLED=false`) — the same detection verdict is
-supposed to come out either way; that equivalence is the core claim the
-project is built to demonstrate.
+rate-limited (`groq → gemini → ollama`).
 
 | Provider | Model | Used for | Notes |
 |---|---|---|---|
@@ -84,9 +167,25 @@ budget before the visible JSON is written — the router accounts for this
 (`thinkingConfig.thinkingBudget: 0` on Gemini, `reasoning_effort: "low"` on
 Groq's `gpt-oss` models) so responses come back reliably.
 
-Run `python scripts/check_ai.py` after pasting in keys to confirm both
-providers are actually reachable — it costs 2–3 requests and never prints
-the key back.
+### What each AI feature uses
+
+Everything below is one call-site each, selected by `TASK_PROVIDER` in
+`backend/app/config.py` and overridable per-task via the `LLM_*` lines in
+`.env` (see `.env.example` for the full list).
+
+| Feature — what you see in the app | Backend task | Default provider |
+|---|---|---|
+| Generating the synthetic attack scenario for a demo run | `scenario` | Gemini |
+| "Ask Why" panel — reasoning steps, evidence, why-act/why-wait, alternatives | `explain` | Groq |
+| The AI's own independent read of an incident (the "second analyst" in the both-sides comparison) | `analysis` | Groq |
+| The AI's own independent risk verdict, blind to the rules' score — reconciled against the deterministic score | `assess` | Groq |
+| Reviewing events the deterministic rules found unusual but didn't fire a rule on | `triage` | Groq |
+| Proposing that two separate incidents are the same campaign | `correlate` | Groq |
+| Writing the remediation plan (the steps shown in Alternatives / Override) | `remediation` | Groq |
+
+Everything outside this table — detection thresholds, risk-tier assignment,
+blast-radius calculation, the audit ledger, and all governance/approval
+logic — is deterministic and involves no AI at all, by design.
 
 ---
 
