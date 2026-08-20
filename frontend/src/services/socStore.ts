@@ -765,6 +765,15 @@ class SOCStore {
   }
 
   private async refreshActionsAndIncidents() {
+    // Approving/rejecting/overriding/escalating/rolling back an action
+    // changes that action's status, which is exactly what the incident
+    // detail page's remediation-plan view shows per step — but that view
+    // reads from `aiAnalyses`, a separate cache this refresh never used to
+    // touch, so it kept showing "PENDING" after a successful approval
+    // until something else happened to trigger a refetch. Clearing it
+    // here means the next read (the lazy Proxy in SOCContext) fetches
+    // fresh data instead of serving the stale pre-decision snapshot.
+    this.aiAnalyses = {};
     await Promise.all([this.fetchActions(), this.fetchIncidents(), this.fetchDashboard(), this.fetchLedger()]);
     this.notify();
   }
