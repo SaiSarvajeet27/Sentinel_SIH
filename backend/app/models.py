@@ -423,6 +423,14 @@ class Notification(Base):
     for_role: Mapped[str] = mapped_column(String, default="analyst")
     read:     Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Which action this notification is about, if any — lets a decision on
+    # that action (approve/reject/override/escalate/rollback) auto-mark the
+    # notification read. Without this, two pending approvals of the same
+    # kind ("Approval required: Isolate host") are indistinguishable by
+    # title alone, so resolving one could only ever guess at which
+    # notification to clear.
+    action_id: Mapped[str | None] = mapped_column(String, index=True)
+
 
 # ══════════════════════════════════════════════════════════════════════
 #  METRICS — serves the chart, sparklines, deltas and donut

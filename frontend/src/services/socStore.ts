@@ -65,6 +65,8 @@ export interface SOCNotification {
   title: string;
   message: string;
   type: 'info' | 'warning' | 'error' | 'success';
+  link?: string;
+  read?: boolean;
 }
 
 type StoreListener = () => void;
@@ -715,6 +717,21 @@ class SOCStore {
     this.notify();
   }
 
+  public async markNotificationRead(id: string) {
+    const n = this.notifications.find((x) => x.id === id);
+    if (!n || n.read) return;
+    n.read = true;
+    this.notify();
+    if (id.startsWith('SRV-')) {
+      const backendId = Number(id.slice(4));
+      try {
+        await backendApi.markNotificationRead(backendId);
+      } catch {
+        /* already updated optimistically; a later refresh will reconcile */
+      }
+    }
+  }
+
   private pushError(title: string, e: unknown) {
     const message = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
     this.pushNotification({ id: `NOTIF-${Date.now()}`, timestamp: new Date().toISOString(), title, message, type: 'error' });
@@ -845,16 +862,24 @@ class SOCStore {
   private async fetchNotifications() {
     try {
       const res = await backendApi.notifications();
-      // Merge server notifications (approvals, escalations) in behind any
-      // local ones already shown this session, de-duplicated by title+link.
+      // Merge server notifications (approvals, escalations) in with any
+      // purely-local ones already shown this session. De-duplicated — and
+      // updated in place — by the real backend id, not by title: several
+      // distinct pending approvals can legitimately share the exact same
+      // title ("Approval required: Isolate host"), and the server is the
+      // authority on `read` state (e.g. auto-marked read once the analyst
+      // resolves the underlying action from anywhere in the app), so a
+      // re-fetch must overwrite the cached copy rather than skip it.
       const server: SOCNotification[] = (res.items || []).map((n: any) => ({
         id: `SRV-${n.id}`, timestamp: n.at || new Date().toISOString(),
         title: n.title, message: n.body || '', type: n.kind === 'security' ? 'warning' : 'info',
+        link: n.link || undefined, read: !!n.read,
       }));
-      const seen = new Set(this.notifications.map((n) => n.title));
-      for (const n of server) if (!seen.has(n.title)) this.notifications.push(n);
-      this.notifications.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
-      this.notifications = this.notifications.slice(0, 20);
+      const byId = new Map(this.notifications.map((n) => [n.id, n]));
+      for (const n of server) byId.set(n.id, n);
+      this.notifications = Array.from(byId.values())
+        .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))
+        .slice(0, 20);
     } catch { /* keep previous cache */ }
   }
 

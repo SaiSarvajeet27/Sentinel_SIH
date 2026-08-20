@@ -180,6 +180,8 @@ export const backendApi = {
 
   // ── notifications & search ──────────────────────────────────────────
   notifications: () => get<Record<string, any>>('/api/notifications'),
+  markNotificationRead: (id: number) =>
+    put<{ id: number; read: boolean }>(`/api/notifications/${id}/read`),
   search: (q: string) => get<Record<string, any>>(`/api/search?q=${encodeURIComponent(q)}`),
 
   // ── feedback (RLHF) ──────────────────────────────────────────────────

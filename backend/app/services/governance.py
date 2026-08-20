@@ -173,10 +173,20 @@ def set_setting(s: Session, key: str, value) -> None:
 # ══════════════════════════════════════════════════════════════════════
 
 def notify(s: Session, kind: str, title: str, body: str = "",
-           link: str = "", for_role: str = "analyst") -> None:
+           link: str = "", for_role: str = "analyst",
+           action_id: str | None = None) -> None:
     s.add(Notification(kind=kind, title=title, body=body,
-                       link=link, for_role=for_role))
+                       link=link, for_role=for_role, action_id=action_id))
     bus.publish("notification", {"kind": kind, "title": title, "link": link})
+
+
+def mark_notifications_read_for_action(s: Session, action_id: str) -> None:
+    """A decision was made on this action — any notification asking someone
+    to look at it is stale now. Called from every action-resolving path
+    (approve, reject, override, escalate, rollback)."""
+    (s.query(Notification)
+      .filter(Notification.action_id == action_id, Notification.read.is_(False))
+      .update({"read": True}))
 
 
 # ══════════════════════════════════════════════════════════════════════

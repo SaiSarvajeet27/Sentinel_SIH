@@ -117,6 +117,7 @@ interface SOCContextType {
   submitAnalystFeedback: (feedback: AnalystFeedback) => void;
   setIncidentStatus: (incidentId: string, status: IncidentStatus) => void;
   proposeRemediation: (incidentId: string) => void;
+  markNotificationRead: (id: string) => void;
   resetStore: () => void;
 }
 
@@ -220,6 +221,7 @@ export const SOCProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     submitAnalystFeedback: (feedback: AnalystFeedback) => socStore.submitAnalystFeedback(feedback),
     setIncidentStatus: (incidentId: string, status: IncidentStatus) => socStore.setIncidentStatus(incidentId, status),
     proposeRemediation: (incidentId: string) => socStore.proposeRemediation(incidentId),
+    markNotificationRead: (id: string) => socStore.markNotificationRead(id),
     resetStore: () => socStore.resetStore(),
   };
 

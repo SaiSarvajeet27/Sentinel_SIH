@@ -338,7 +338,8 @@ def execute_auto(s: Session, actions: list[Action],
             governance.notify(s, "approval",
                               f"Approval required: {ACTION_LABELS.get(a.kind, a.kind)}",
                               a.blast_radius.get("summary", ""),
-                              "/approvals", "senior_analyst")
+                              "/approvals", "senior_analyst",
+                              action_id=a.action_id)
             bus.publish("action.pending", {"action_id": a.action_id,
                                            "kind": a.kind, "tier": a.tier})
 
@@ -381,6 +382,7 @@ def approve(s: Session, action: Action, user_id: str, role: str,
                                   "reason": reason, "approvers": action.approved_by})
         bus.publish("action.executed", {"action_id": action.action_id,
                                         "kind": action.kind, "approved": True})
+        governance.mark_notifications_read_for_action(s, action.action_id)
         # A tier-2+ action is disruptive by definition (the tier is what
         # forces the approval in the first place) — once one actually
         # executes, the incident has moved from "under attack" to "under
@@ -415,6 +417,7 @@ def override(s: Session, action: Action, chosen_kind: str, user_id: str,
         raise ValueError("chosen action is not in the approved vocabulary")
 
     action.status = "rejected"
+    governance.mark_notifications_read_for_action(s, action.action_id)
     s.add(Override(action_id=action.action_id, incident_id=action.incident_id,
                    recommended_action=action.kind, chosen_action=chosen_kind,
                    reason=reason, analyst=user_id))

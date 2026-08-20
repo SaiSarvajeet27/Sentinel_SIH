@@ -1087,6 +1087,7 @@ def reject_action(action_id: str, body: ApproveBody, request: Request,
         raise HTTPException(400, "a reason of at least 10 characters is required")
     principal = _principal(request)
     action.status = "rejected"
+    governance.mark_notifications_read_for_action(s, action_id)
     governance.append_ledger(s, principal.id, "action_rejected",
                              {"action_id": action_id, "reason": body.reason})
     return _action_row(action)
@@ -1106,8 +1107,10 @@ def escalate_action(action_id: str, body: ApproveBody, request: Request,
     nxt = {"analyst": "senior_analyst", "senior_analyst": "manager"}.get(
         principal.role)
     action.escalated_to = nxt
+    governance.mark_notifications_read_for_action(s, action_id)
     governance.notify(s, "escalation", f"Escalated: {action.kind}",
-                      body.reason, "/approvals", nxt or "manager")
+                      body.reason, "/approvals", nxt or "manager",
+                      action_id=action_id)
     governance.append_ledger(s, principal.id, "action_escalated",
                              {"action_id": action_id, "to": nxt})
     return _action_row(action)
@@ -1127,6 +1130,7 @@ def dismiss_action(action_id: str, body: ApproveBody, request: Request,
         raise HTTPException(400, "a reason of at least 10 characters is required")
     principal = _principal(request)
     action.status = "dismissed"
+    governance.mark_notifications_read_for_action(s, action_id)
     governance.append_ledger(s, principal.id, "action_dismissed",
                              {"action_id": action_id, "kind": action.kind,
                               "reason": body.reason})
@@ -1287,6 +1291,15 @@ def notifications(s: Session = Depends(db_dep)):
                        "body": n.body, "link": n.link,
                        "at": n.created_at.isoformat() if n.created_at else None,
                        "read": n.read} for n in rows]}
+
+
+@app.put("/api/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int, s: Session = Depends(db_dep)):
+    n = s.get(Notification, notification_id)
+    if not n:
+        raise HTTPException(404, "notification not found")
+    n.read = True
+    return {"id": n.id, "read": True}
 
 
 @app.get("/api/search")
