@@ -888,9 +888,25 @@ def _assign(s: Session, alert_dict: dict) -> Incident | None:
         return None
 
     window = alert.detected_at - timedelta(minutes=config.CLUSTER_WINDOW_MIN)
+    # Only ever join an incident from the same run.
+    #
+    # Without this an incident snowballs across runs and never stops. The
+    # simulated organisation reuses the same twelve hosts and twenty-five
+    # users every time, so `graph.related()` almost always finds a path
+    # between a new alert and some older incident's entities; joining then
+    # pushes that incident's `last_seen` forward, which keeps it inside the
+    # window for the *next* run too. One incident ends up absorbing every
+    # subsequent attack, and a freshly generated threat appears to vanish —
+    # it is merged into a case from hours ago rather than showing up as its
+    # own. Separate runs are separate attacks and must not merge.
+    #
+    # For live (non-run) traffic `alert.run_id` is None and SQLAlchemy
+    # renders this as `run_id IS NULL`, so real events still cluster with
+    # each other exactly as before.
     candidates = (s.query(Incident)
                    .filter(Incident.status == "open",
-                           Incident.last_seen >= window)
+                           Incident.last_seen >= window,
+                           Incident.run_id == alert.run_id)
                    .order_by(Incident.last_seen.desc()).limit(12).all())
 
     # Shared infrastructure is not evidence of a relationship.
