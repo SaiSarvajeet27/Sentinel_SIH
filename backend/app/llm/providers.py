@@ -196,15 +196,34 @@ class GroqProvider:
 class OllamaProvider:
     name = "ollama"
 
+    # How long an availability probe stays good for. `available()` is a
+    # live network call, and it is on the path of every dashboard render
+    # (health_score → provider_status → available). With no Ollama running
+    # the probe costs the full timeout, and on a host where `localhost`
+    # resolves to ::1 before 127.0.0.1 it costs it *twice* — measured at
+    # 4.5s of a 5.0s /api/dashboard response, for a check whose answer
+    # changes at most when someone starts or stops a local server.
+    #
+    # So cache it. A stale "unavailable" costs one fallback attempt in the
+    # router, which already handles a provider failing mid-call; a stale
+    # "available" is corrected the same way.
+    _PROBE_TTL_S = 30.0
+
     def __init__(self) -> None:
         self.model = config.OLLAMA_MODEL
         self.host = config.OLLAMA_HOST.rstrip("/")
+        self._probe: tuple[float, bool] | None = None
 
     def available(self) -> bool:
+        now = time.monotonic()
+        if self._probe is not None and now - self._probe[0] < self._PROBE_TTL_S:
+            return self._probe[1]
         try:
-            return httpx.get(f"{self.host}/api/tags", timeout=2.0).status_code == 200
+            ok = httpx.get(f"{self.host}/api/tags", timeout=2.0).status_code == 200
         except Exception:                            # noqa: BLE001
-            return False
+            ok = False
+        self._probe = (now, ok)
+        return ok
 
     def complete(self, system: str, user: str, json_schema: dict | None = None,
                  max_tokens: int = 1024, temperature: float = 0.2) -> LLMResult:

@@ -57,7 +57,18 @@ interface SOCContextType {
     opsSummary: Record<string, number>;
     playbooks: { id: string; name: string; used: number; executed: number; share: number }[];
     systemHealthScore: number;
+    healthChecks: Record<string, boolean> | null;
+    healthLabel: string;
+    risk: {
+      worst_score: number | null;
+      deterministic: number | null;
+      ai_delta: number | null;
+      incident_id: string | null;
+      open_incidents: number;
+    } | null;
+    trustScore: number | null;
   };
+  setActivityWindow: (window: '24h' | '7d') => void;
   requestCampaignLinks: () => void;
   
   // Phase 1 Governance & Auth State
@@ -162,6 +173,7 @@ export const SOCProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     metrics: socStore.getMetrics(),
     notifications: socStore.getNotifications(),
     dashboardExtras: socStore.getDashboardExtras(),
+    setActivityWindow: (w: '24h' | '7d') => { void socStore.setActivityWindow(w); },
     requestCampaignLinks: () => socStore.requestCampaignLinks(),
     
     // Auth & Governance

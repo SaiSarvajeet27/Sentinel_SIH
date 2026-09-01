@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import clsx from 'clsx';
 import {
   ShieldAlert,
   AlertTriangle,
@@ -58,7 +59,7 @@ const PLAYBOOK_STYLES = [
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { authUser, setActiveIncidentId, incidents, metrics, dashboardExtras, aiEnabled } = useSOC();
+  const { authUser, setActiveIncidentId, incidents, metrics, dashboardExtras, aiEnabled, setActivityWindow } = useSOC();
   const { theme } = useTheme();
   const [threatFilter, setThreatFilter] = useState('All Threats');
   const [timeRange, setTimeRange] = useState('Last 24 Hours');
@@ -99,9 +100,24 @@ export const DashboardPage: React.FC = () => {
     }));
 
   const openIncidents = incidents.filter((i) => i.status === 'OPEN' || i.status === 'INVESTIGATING');
-  const worstRisk = openIncidents.length ? Math.max(...openIncidents.map((i) => i.riskScore)) : 0;
+  // Prefer the backend's figure: it is the max over *every* open incident,
+  // while `incidents` here is only the page the client happens to have
+  // fetched, so computing it locally understates the peak as soon as the
+  // list is paginated.
+  const riskBreakdown = dashboardExtras.risk;
+  const localWorst = openIncidents.length ? Math.max(...openIncidents.map((i) => i.riskScore)) : 0;
+  const worstRisk = riskBreakdown?.worst_score ?? localWorst;
   const riskLabel = worstRisk >= 80 ? 'High Risk' : worstRisk >= 45 ? 'Elevated Risk' : worstRisk > 0 ? 'Low Risk' : 'Nominal';
-  const topIncidentId = [...openIncidents].sort((a, b) => b.riskScore - a.riskScore)[0]?.id;
+  const topIncidentId =
+    riskBreakdown?.incident_id ?? [...openIncidents].sort((a, b) => b.riskScore - a.riskScore)[0]?.id;
+
+  const healthChecks = dashboardExtras.healthChecks;
+  const healthTotal = healthChecks ? Object.keys(healthChecks).length : 4;
+  const healthPassed = healthChecks ? Object.values(healthChecks).filter(Boolean).length : 0;
+  const healthOk = healthChecks != null && healthPassed === healthTotal;
+  const failedChecks = healthChecks
+    ? Object.entries(healthChecks).filter(([, v]) => !v).map(([k]) => k.replace(/_/g, ' '))
+    : [];
 
   const ops = dashboardExtras.opsSummary;
   const fmtDuration = (secs?: number) => {
@@ -144,7 +160,14 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div
-            onClick={() => setTimeRange(timeRange === 'Last 24 Hours' ? 'Last 7 Days' : 'Last 24 Hours')}
+            onClick={() => {
+              const next = timeRange === 'Last 24 Hours' ? 'Last 7 Days' : 'Last 24 Hours';
+              setTimeRange(next);
+              // Actually re-query. This control used to change only its own
+              // label, so the chart under it kept showing 24h whichever
+              // range it claimed to be displaying.
+              setActivityWindow(next === 'Last 7 Days' ? '7d' : '24h');
+            }}
             className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-soc-card border border-soc-border text-xs text-soc-textPrimary hover:border-soc-borderLight transition-colors cursor-pointer select-none shadow-sm"
           >
             <span>{timeRange}</span>
@@ -203,19 +226,28 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* SYSTEM HEALTH */}
+        {/* SYSTEM HEALTH — shown as a percentage. The underlying figure is
+            four boolean checks, so it only ever lands on 0/25/50/75/100;
+            when something fails we name which check, so the number is never
+            the only thing the panel tells you. */}
         <div className="p-4 rounded-xl bg-soc-card border border-soc-border flex flex-col justify-between space-y-2.5 shadow-sm">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-500">
+            <div className={clsx('p-1.5 rounded-lg', healthOk ? 'bg-emerald-500/15 text-emerald-500' : 'bg-amber-500/15 text-amber-500')}>
               <ShieldCheck className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-semibold text-emerald-500">System Health</span>
+            <span className={clsx('text-xs font-semibold', healthOk ? 'text-emerald-500' : 'text-amber-500')}>System Health</span>
           </div>
           <div className="flex items-end justify-between">
             <div>
-              <div className="text-2xl font-extrabold text-soc-textPrimary tracking-tight">{dashboardExtras.systemHealthScore}%</div>
+              <div className="text-2xl font-extrabold text-soc-textPrimary tracking-tight">
+                {dashboardExtras.systemHealthScore}%
+              </div>
               <div className="text-[11px] text-soc-textMuted mt-0.5 font-medium">
-                {dashboardExtras.systemHealthScore >= 100 ? 'all systems operational' : 'degraded — see Settings'}
+                {healthOk
+                  ? 'all systems operational'
+                  : failedChecks.length
+                    ? `failing: ${failedChecks.join(', ')}`
+                    : 'health unknown'}
               </div>
             </div>
           </div>
@@ -288,10 +320,12 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* AI Risk Score (3 cols) */}
+        {/* Peak Incident Risk (3 cols) — deterministic score, plus whatever
+            the model actually moved it by. Previously titled "AI Risk
+            Score" while displaying a number the model had no part in. */}
         <div className="lg:col-span-3 p-4 rounded-xl bg-soc-card border border-soc-border flex flex-col items-center justify-between text-center shadow-sm">
           <div className="w-full flex items-center justify-between">
-            <h2 className="text-xs font-bold text-soc-textPrimary">AI Risk Score</h2>
+            <h2 className="text-xs font-bold text-soc-textPrimary">Peak Incident Risk</h2>
             <Sparkles className="w-3.5 h-3.5 text-soc-ai" />
           </div>
 
@@ -335,6 +369,18 @@ export const DashboardPage: React.FC = () => {
             <p className="text-[11px] text-soc-textSecondary mt-0.5 max-w-[170px]">
               {worstRisk > 0 ? 'Highest-risk incident currently open.' : 'No open incidents right now.'}
             </p>
+            {/* Attribute the number. The kill-chain arithmetic produces the
+                base score; the model can only move it within the clamps in
+                config.py, and often moves it by nothing at all. Saying so
+                is the difference between a claim and a measurement. */}
+            {riskBreakdown && worstRisk > 0 && (
+              <p className="text-[10px] text-soc-textMuted mt-1 font-mono">
+                rules {riskBreakdown.deterministic ?? 0}
+                {' · AI '}
+                {(riskBreakdown.ai_delta ?? 0) > 0 ? '+' : ''}
+                {riskBreakdown.ai_delta ?? 0}
+              </p>
+            )}
           </div>
         </div>
 

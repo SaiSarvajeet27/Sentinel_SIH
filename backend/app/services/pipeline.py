@@ -492,26 +492,84 @@ class Graph:
             return False
         return cost <= config.CLUSTER_HOP_BUDGET
 
+    # How many representative event ids to keep per collapsed relationship.
+    # Enough for the detail panel to offer a sample to open; not so many
+    # that a chatty pair (a user who logs into the same host all week) puts
+    # thousands of ids back into the payload we just removed them from.
+    # At 20 the ids were themselves two thirds of the response, so: five,
+    # plus `event_id` for the earliest occurrence, which is the one anybody
+    # opening the edge actually wants.
+    EDGE_EVENT_SAMPLE = 5
+
     def subgraph_payload(self, entities: list[str]) -> dict:
-        """Cytoscape elements for one incident."""
-        nodes, edges, seen = [], [], set()
+        """Cytoscape elements for one incident.
+
+        `self.g` is a MultiDiGraph holding one edge per *event*, which is
+        what makes "which event connected these two" answerable. It is not
+        what the view should render: a user who logs into their own
+        workstation all week produces thousands of identical
+        `user -logged into-> host` edges, and one real incident measured
+        20,714 edges that collapsed to 254 distinct relationships — an
+        81x duplication, 4.3 MB of JSON, and a React Flow canvas asked to
+        mount 20,714 animated SVG paths.
+
+        So collapse by (source, target, relationship) here, and carry the
+        occurrence count plus the time span the occurrences cover. The
+        rendered graph is unchanged in shape — the same nodes, the same
+        relationships, in the same order — it just stops drawing the same
+        arrow eighty times. `event_ids` keeps a bounded sample so the
+        evidence question stays answerable.
+        """
+        nodes, seen = [], set()
         wanted = set(entities)
-        for a, b, data in self.g.edges(data=True):
-            if a in wanted or b in wanted:
-                for n in (a, b):
-                    if n not in seen:
-                        seen.add(n)
-                        nodes.append({"data": {
-                            "id": n, "label": n.split(":", 1)[-1],
-                            "type": self.g.nodes[n].get("type", "unknown"),
-                        }})
-                edges.append({"data": {
-                    "id": f"{a}->{b}-{data.get('ts')}",
+        collapsed: dict[tuple[str, str, str], dict] = {}
+
+        # `keys=True`: the event id is the MultiDiGraph *key* (see add_edge
+        # in _edges), not an entry in the edge's data dict — `data["event_id"]`
+        # is always absent, so reading it there silently yielded null for
+        # every edge and the "which event connected these two" question the
+        # multigraph exists to answer could not actually be answered.
+        for a, b, event_id, data in self.g.edges(keys=True, data=True):
+            if a not in wanted and b not in wanted:
+                continue
+            for n in (a, b):
+                if n not in seen:
+                    seen.add(n)
+                    nodes.append({"data": {
+                        "id": n, "label": n.split(":", 1)[-1],
+                        "type": self.g.nodes[n].get("type", "unknown"),
+                    }})
+
+            rel = data.get("rel", "")
+            ts = data["ts"].isoformat() if data.get("ts") else None
+            key = (a, b, rel)
+
+            agg = collapsed.get(key)
+            if agg is None:
+                collapsed[key] = {
+                    "id": f"{a}->{b}-{rel}",
                     "source": a, "target": b,
-                    "label": data.get("rel", "").replace("_", " "),
-                    "ts": data["ts"].isoformat() if data.get("ts") else None,
-                    "event_id": data.get("event_id"),
-                }})
+                    "label": rel.replace("_", " "),
+                    # `ts` stays the *earliest* occurrence: the adapter
+                    # orders nodes left-to-right by the first edge that
+                    # mentions them, so this has to be first-seen, not last.
+                    "ts": ts, "last_ts": ts, "count": 1,
+                    "event_id": event_id,
+                    "event_ids": [event_id] if event_id else [],
+                }
+                continue
+
+            agg["count"] += 1
+            if ts:
+                if agg["ts"] is None or ts < agg["ts"]:
+                    agg["ts"] = ts
+                    agg["event_id"] = event_id       # keep the earliest
+                if agg["last_ts"] is None or ts > agg["last_ts"]:
+                    agg["last_ts"] = ts
+            if event_id and len(agg["event_ids"]) < self.EDGE_EVENT_SAMPLE:
+                agg["event_ids"].append(event_id)
+
+        edges = [{"data": d} for d in collapsed.values()]
         return {"elements": {"nodes": nodes, "edges": edges}}
 
 

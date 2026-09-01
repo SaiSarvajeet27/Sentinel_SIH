@@ -111,6 +111,12 @@ class SOCStore {
   private dashboard: DashboardMetrics & {
     threatActivity?: any[]; threatTypes?: any[]; opsSummary?: Record<string, number>;
     playbooks?: any[]; systemHealthScore?: number;
+    healthChecks?: Record<string, boolean> | null; healthLabel?: string;
+    risk?: {
+      worst_score: number | null; deterministic: number | null;
+      ai_delta: number | null; incident_id: string | null; open_incidents: number;
+    } | null;
+    trustScore?: number | null;
   } = {
     totalEvents: 0, activeIncidents: 0, criticalThreats: 0, highThreats: 0, mediumThreats: 0,
     pendingApprovals: 0, aiInvestigationsCount: 0, systemStatus: 'OPERATIONAL', threatTrend: [], severityDistribution: [],
@@ -597,8 +603,33 @@ class SOCStore {
       threatTypes: this.dashboard.threatTypes || [],
       opsSummary: this.dashboard.opsSummary || {},
       playbooks: this.dashboard.playbooks || [],
-      systemHealthScore: this.dashboard.systemHealthScore ?? 100,
+      // `?? 100` here had the same effect as in the adapter: a dashboard
+      // that had not loaded yet reported perfect health.
+      systemHealthScore: this.dashboard.systemHealthScore ?? 0,
+      healthChecks: this.dashboard.healthChecks ?? null,
+      healthLabel: this.dashboard.healthLabel ?? 'Health unknown',
+      risk: this.dashboard.risk ?? null,
+      trustScore: this.dashboard.trustScore ?? null,
     };
+  }
+
+  /** Re-fetch just the threat-activity series for a different window.
+   *  The dashboard's range control used to set a label and nothing else —
+   *  it toggled between "Last 24 Hours" and "Last 7 Days" while every
+   *  number under it stayed on the 24h series, which is worse than having
+   *  no control at all. */
+  public async setActivityWindow(window: '24h' | '7d'): Promise<void> {
+    try {
+      const raw = await backendApi.timeseries('alerts', window);
+      const values: number[] = raw?.series?.[0]?.values || [];
+      this.dashboard.threatActivity = (raw?.buckets || []).map((time: string, i: number) => ({
+        time,
+        events: values[i] || 0,
+      }));
+      this.notify();
+    } catch {
+      /* leave the previous series in place rather than blanking the chart */
+    }
   }
 
   // ── mutators & actions ───────────────────────────────────────────────

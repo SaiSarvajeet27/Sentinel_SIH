@@ -1479,7 +1479,11 @@ def trust_metrics(s: Session = Depends(db_dep)):
     rejected = sum(1 for r in rows if r.action_type == "action_rejected")
     overridden = sum(1 for r in rows if r.action_type == "action_overridden")
     total = accepted + rejected + overridden
-    trust_score = round(accepted / total * 100) if total else 100
+    # None rather than 100 on an empty ledger: "every recommendation was
+    # accepted" and "nothing has been decided yet" are different states, and
+    # showing a perfect score for the second one is the panel asserting a
+    # measurement it has not made.
+    trust_score = round(accepted / total * 100) if total else None
 
     # Bucket into 7 periods across the ledger's span so the sparkline has
     # something to draw even on a short demo run.
@@ -1502,7 +1506,9 @@ def trust_metrics(s: Session = Depends(db_dep)):
                          if running_total else trust_score,
             })
     else:
-        history = [{"period": f"T-{i}", "score": 100} for i in range(buckets, 0, -1)]
+        # An empty ledger has no history. A flat line at 100 is not an
+        # empty state, it is a fabricated perfect record.
+        history = []
 
     from app.models import Rule
     top_types = []

@@ -377,6 +377,16 @@ export function adaptDashboard(
   opsSummary: Record<string, number>;
   playbooks: { id: string; name: string; used: number; executed: number; share: number }[];
   systemHealthScore: number;
+  healthChecks: Record<string, boolean> | null;
+  healthLabel: string;
+  risk: {
+    worst_score: number | null;
+    deterministic: number | null;
+    ai_delta: number | null;
+    incident_id: string | null;
+    open_incidents: number;
+  } | null;
+  trustScore: number | null;
 } {
   const kpis = dash.kpis || {};
   const open = incidents.filter((i) => i.status === 'OPEN' || i.status === 'INVESTIGATING');
@@ -407,7 +417,10 @@ export function adaptDashboard(
     mediumThreats: medium,
     pendingApprovals: kpis.pending_approvals || 0,
     aiInvestigationsCount: kpis.alerts_raised || 0,
-    systemStatus: 'OPERATIONAL',
+    // Was the literal 'OPERATIONAL', which meant the status indicator read
+    // healthy while the backend's own checks were failing. It now follows
+    // those checks.
+    systemStatus: (kpis.system_health?.score ?? 0) >= 100 ? 'OPERATIONAL' : 'DEGRADED',
     threatTrend: threatActivity.map((t: any) => ({ time: t.time, events: t.events, incidents: 0 })),
     severityDistribution: [
       { severity: 'CRITICAL' as Severity, count: critical, percentage: Math.round((critical / total) * 100) },
@@ -419,7 +432,15 @@ export function adaptDashboard(
     threatTypes,
     opsSummary: dash.ops_summary || {},
     playbooks: dash.playbooks || [],
-    systemHealthScore: kpis.system_health?.score ?? 100,
+    // `?? 100` meant a dashboard that failed to load its health block
+    // displayed a perfect score — the one situation where a perfect score
+    // is certainly wrong. Fall back to 0 so a missing reading reads as
+    // missing.
+    systemHealthScore: kpis.system_health?.score ?? 0,
+    healthChecks: kpis.system_health?.checks ?? null,
+    healthLabel: kpis.system_health?.label ?? 'Health unknown',
+    risk: kpis.risk ?? null,
+    trustScore: kpis.trust_score ?? null,
   };
 }
 

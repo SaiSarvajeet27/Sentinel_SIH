@@ -6,14 +6,18 @@ donut. Build it once.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.db import counters
 from app.models import (Action, Alert, Event, Incident, MetricPoint,
                         PlaybookUsage)
+
+log = logging.getLogger(__name__)
 
 WINDOWS = {"1h": 1, "6h": 6, "24h": 24, "7d": 168}
 
@@ -34,10 +38,36 @@ def kpis(s: Session) -> dict:
     injections = (s.query(Alert)
                    .filter(Alert.rule_id == "INJECTION_ATTEMPT").count())
 
+    # Share of decided actions a human let stand. `rolled_back` counts as
+    # decided but not as approved — an action undone after the fact is
+    # precisely the case where the recommendation turned out to be wrong,
+    # so counting it as agreement would flatter the number.
     decided = s.query(Action).filter(
         Action.status.in_(["executed", "rejected", "rolled_back"])).count()
     approved = s.query(Action).filter(Action.status == "executed").count()
-    trust = round(approved / decided * 100) if decided else 85
+    # None, not 85. There was no basis for 85 — it was a plausible-looking
+    # number standing in for a measurement that had not been taken, on a
+    # panel whose whole claim is that its numbers are measured. The UI can
+    # say "not enough decisions yet"; it cannot un-see a fabricated 85.
+    trust = round(approved / decided * 100) if decided else None
+
+    # The dashboard's risk gauge is the single worst open incident. It was
+    # labelled "AI Risk Score" while being read straight off the
+    # deterministic kill-chain arithmetic — on this database the worst
+    # incident scores 100 with an `ai_score_delta` of 0.0, so the number
+    # under that label had no AI in it at all. Return the decomposition so
+    # the panel can say which part came from where instead of crediting all
+    # of it to the model.
+    worst = (s.query(Incident)
+              .filter(Incident.status == "open")
+              .order_by(Incident.risk_score.desc()).first())
+    risk = {
+        "worst_score": round(worst.risk_score, 1) if worst else None,
+        "deterministic": round(worst.base_score or 0.0, 1) if worst else None,
+        "ai_delta": round(worst.ai_score_delta or 0.0, 1) if worst else None,
+        "incident_id": worst.incident_id if worst else None,
+        "open_incidents": open_incidents,
+    }
 
     return {
         "open_incidents": open_incidents,
@@ -45,6 +75,7 @@ def kpis(s: Session) -> dict:
         "pending_approvals": pending,
         "adversarial_attempts": injections,
         "trust_score": trust,
+        "risk": risk,
         "events_processed": events,
         "alerts_raised": alerts,
         # the subtitle that carries the whole value proposition
@@ -336,18 +367,36 @@ def health_score(s: Session) -> dict:
     status = router.provider_status()
     any_provider = any(p["available"] for p in status["providers"].values())
 
+    # `database` used to be the literal `True`, which made it the one check
+    # that could never fail and so the one check that meant nothing. A
+    # trivial round trip is not much, but it is an actual round trip: it
+    # catches a locked SQLite file or a dropped Postgres connection, which
+    # is exactly the condition the panel claims to be reporting on.
+    try:
+        s.execute(sa_text("SELECT 1")).scalar()
+        database_ok = True
+    except Exception:                                # noqa: BLE001
+        log.exception("database health check failed")
+        database_ok = False
+
     checks = {
-        "database": True,
+        "database": database_ok,
         "ai_provider": any_provider or not status["ai_enabled"],
         "rules_loaded": s.query(func.count()).select_from(
             __import__("app.models", fromlist=["Rule"]).Rule).scalar() > 0,
         "ledger_verified": governance.verify_chain(s)["valid"],
     }
     score = round(100 * sum(checks.values()) / len(checks))
+    # Four booleans, so the score only ever lands on 0/25/50/75/100. Name
+    # the checks in the response rather than leaning on the number alone —
+    # "3 of 4" is a fact, "75%" invites reading it as a continuous measure
+    # of something it does not measure.
+    failed = [k for k, v in checks.items() if not v]
     return {"score": score, "checks": checks,
+            "checks_passed": sum(checks.values()), "checks_total": len(checks),
             "ai": status,
             "label": "All systems operational" if score == 100
-                     else "Degraded"}
+                     else "Degraded: " + ", ".join(f.replace("_", " ") for f in failed)}
 
 
 def playbook_stats(s: Session) -> list[dict]:
