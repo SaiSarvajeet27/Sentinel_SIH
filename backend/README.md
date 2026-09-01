@@ -304,7 +304,7 @@ app/
     devices.py         fleet view with a derived, explainable risk score
     metrics.py         KPIs, charts, threat map, health
     demo.py            the seven-step guided demo
-  main.py              64 endpoints + WebSocket
+  main.py              69 endpoints + WebSocket
 db/
   schema.sql           PostgreSQL reference copy of the model schema
 scripts/
@@ -451,7 +451,7 @@ almost every demo of this kind has it.
 | `services/devices.py` — fleet view, derived risk with reasons | ✅ |
 | `services/metrics.py` — KPIs, charts, threat map, health | ✅ |
 | `services/demo.py` — the seven-step guided demo | ✅ |
-| `main.py` — 64 endpoints, WebSocket | ✅ |
+| `main.py` — 69 endpoints, WebSocket | ✅ |
 | `scripts/bootstrap.py` · `scripts/verify_assist.py` | ✅ |
 
 The frontend now wires the dashboard, incidents, explanations, independent

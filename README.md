@@ -52,7 +52,7 @@ entirely for now. Then:
 
 ```bash
 python -m scripts.bootstrap     # creates the database, seeds the org, prints login credentials
-python -m uvicorn app.main:app --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 ```bash
@@ -62,9 +62,22 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** and log in with the credentials `bootstrap.py`
-printed to the terminal (or the ones under [Default login](#default-login)
-below, if you're running the seeded database already in this repo).
+Wait for `Sentinel SOC ready` in Terminal 1 before you open the browser —
+the login page reports an unreachable backend and a wrong password with the
+same message, so starting the frontend first just produces a confusing
+"invalid credentials".
+
+Then open **http://localhost:5173** and log in with:
+
+| | |
+|---|---|
+| **Email** | `admin@sentinel.local` |
+| **Password** | `SecureAdminPass123!` |
+
+That is the manager account, which can approve everything. Two more
+accounts (senior analyst and plain analyst) are under
+[Default login](#default-login) below, along with what to check when a
+login fails.
 
 The backend defaults to **SQLite** (`sentinel.db`, created automatically) so
 this works with nothing else installed. Point `DATABASE_URL` in `.env` at a
@@ -258,16 +271,53 @@ each person's bootstrap run generating its own random, unshared password:
 Log in as `arjun@sentinel.local` and try to approve a Tier-2 action to see
 the boundary enforced server-side, not just hidden in the UI.
 
-If your teammates report these as invalid, it's almost always one of two
-things: (1) their `.env` still has the passwords blank, which makes
-`bootstrap.py` generate — and only ever print once — a random password
-instead of using the fixed one above, or (2) their database already had
-accounts in it from an earlier bootstrap run before `.env` was set up
-correctly, and bootstrap only creates the three accounts on a genuinely
-empty database — it won't retroactively fix already-existing ones. Delete
-`sentinel.db` and re-run `python -m scripts.bootstrap` after confirming
-`.env` matches `.env.example`'s bootstrap section to reset to the
-credentials above.
+### "Invalid credentials" — check the backend is running first
+
+The login page shows **one message for two completely different failures**:
+
+> Invalid credentials, or the backend is unreachable at http://localhost:8000
+
+In practice it is almost always the second one. Before touching passwords
+or the database, confirm the backend is actually up:
+
+```bash
+curl -i http://127.0.0.1:8000/api/health
+```
+
+- **`401 Unauthorized`** — the backend is running correctly. That endpoint
+  requires a token, so 401 is the healthy answer. Your credentials are fine;
+  use the table above exactly as written.
+- **Connection refused / no response** — nothing is listening. Start the
+  backend (Terminal 1 above) and wait for `Sentinel SOC ready` before you
+  try to log in.
+
+Two things that look like credential problems but are not:
+
+- **The backend does not auto-reload unless you pass `--reload`.** A server
+  started before your last edit keeps serving the old code, which shows up
+  as stale numbers on the dashboard rather than a login failure — but it is
+  the same root cause: the process you are talking to is not the code you
+  think it is.
+- **`localhost` may resolve to IPv6 `::1` while uvicorn binds IPv4-only
+  `127.0.0.1`.** Browsers usually fall back, but if the console cannot reach
+  the API while `curl 127.0.0.1:8000` works, set
+  `VITE_API_BASE=http://127.0.0.1:8000` in `frontend/.env`, or start the
+  backend with `--host 0.0.0.0`.
+
+If the backend *is* running and the credentials still fail, then it is one
+of the two database cases: (1) the `.env` had blank passwords at bootstrap
+time, so `bootstrap.py` generated a random one and printed it exactly once,
+or (2) the database already had accounts from an earlier run — bootstrap
+only creates the three accounts on a genuinely empty database and will not
+retroactively fix existing ones. In either case, confirm `.env` matches
+`.env.example`'s bootstrap section, delete `sentinel.db`, and re-run
+`python -m scripts.bootstrap`.
+
+To check what is actually stored without resetting anything:
+
+```bash
+python -c "import sqlite3; print(sqlite3.connect('sentinel.db').execute('SELECT email, role FROM app_users').fetchall())"
+```
 
 The role model has three tiers (`analyst` → `senior_analyst` → `manager`),
 each with strictly increasing approval authority — see
@@ -281,10 +331,15 @@ each with strictly increasing approval authority — see
 |---|---|
 | `python -m scripts.bootstrap` | One-time setup: creates tables, seeds the organisation and detection rules, generates the ledger's signing key, seeds historical incidents |
 | `python scripts/demo_day.py` | Pre-flight check before a demo — verifies config, keys, and DB state, and tells you what's wrong if something isn't ready. `--serve` also starts uvicorn afterwards |
-| `python scripts/check_ai.py` | Confirms both AI providers are reachable with a cheap call each |
+| `python scripts/check_ai.py` | Live-checks Gemini and Ollama, then runs one real task through the router — the router line is the one that matters, since it exercises whichever provider is actually configured. **Known gap:** the script predates the Groq integration, so it prints `groq <-- not a valid provider` for every Groq-routed task and omits Groq from "Working providers". Groq is fine; the checker is stale. Trust the "one real task through the router" section at the bottom |
 | `python scripts/use_local.py` | Rewrites every `LLM_*` route in `.env` to `ollama` for a fully offline run; `--hosted` switches back |
 | `python scripts/verify_assist.py` | Adversarial test suite — proves the model's contribution is bounded (can't invent detections, can't set its own risk tier, can't dismiss what the deterministic path flagged). No API key needed |
-| `pytest` | Unit tests |
+
+There is no `pytest` suite yet — `pytest` is installed and collects zero
+tests. `verify_assist.py` is the real verification path today: it asserts
+the guardrails hold (the model cannot invent detections, cannot set its own
+risk tier, cannot dismiss what the deterministic path flagged) and needs no
+API key.
 
 ---
 
