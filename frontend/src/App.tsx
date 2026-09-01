@@ -11,6 +11,7 @@ import { HumanApprovalPage } from './pages/HumanApprovalPage';
 import { EvidenceAuditPage } from './pages/EvidenceAuditPage';
 import { TrustRulesPage } from './pages/TrustRulesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { LiveThreatPage } from './pages/LiveThreatPage';
 
 const ProtectedLayout: React.FC = () => {
   const { isAuthenticated, authLoading } = useSOC();
@@ -36,6 +37,7 @@ export const App: React.FC = () => {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<ProtectedLayout />}>
               <Route index element={<DashboardPage />} />
+              <Route path="live" element={<LiveThreatPage />} />
               <Route path="incidents" element={<IncidentsPage />} />
               <Route path="incident/:id" element={<IncidentDetailPage />} />
               <Route path="approvals" element={<HumanApprovalPage />} />
