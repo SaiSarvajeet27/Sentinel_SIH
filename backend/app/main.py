@@ -275,9 +275,9 @@ async def demo_next(request: Request):
 
 
 @app.post("/api/demo/play")
-async def demo_play(request: Request):
+async def demo_play(request: Request, speed: float = 1.0):
     _permission(request, "change_settings")
-    return await demo.play()
+    return await demo.play(speed=speed)
 
 
 @app.post("/api/demo/pause")

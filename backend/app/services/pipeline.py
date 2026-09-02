@@ -874,8 +874,13 @@ def _make_alert(s: Session, ev: dict, rule_id: str, title: str,
     if rule_row:
         rule_row.fired_count += 1
 
+    # `tactic` is carried alongside `technique`: both are stored on the
+    # Alert and both are wanted by anything rendering the detection, but
+    # only the technique was being published, so a consumer of the socket
+    # frame could name the technique and not the ATT&CK tactic it belongs
+    # to.
     return {"alert_id": alert.alert_id, "rule_id": rule_id, "title": title,
-            "severity": severity, "technique": technique,
+            "severity": severity, "technique": technique, "tactic": tactic,
             "entities": entities, "ts": ev["ts"].isoformat(),
             "origin": origin, "ai_confidence": ai_confidence,
             "ai_reason": ai_reason}

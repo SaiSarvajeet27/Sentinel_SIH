@@ -220,13 +220,21 @@ async def next_step() -> dict:
     return state.public()
 
 
-async def play() -> dict:
-    """Advance automatically, pausing on each step so a judge can read it."""
+async def play(speed: float = 1.0) -> dict:
+    """Advance automatically, pausing on each step so a judge can read it.
+
+    `speed` divides the pause between steps — 4.0 runs four times faster.
+    It only shortens the wait, never the work: detection, correlation,
+    scoring and the AI calls take exactly as long as they take. Bounded
+    below at 0.25 so a bad value cannot stall the run for an hour, and
+    above at 8 so the steps do not blur past faster than anyone can read.
+    """
     global _play_task
     if state.playing:
         return state.public()
     if not state.run_id:
         await start()
+    speed = min(8.0, max(0.25, speed))
 
     state.playing = True
     bus.publish("demo.playing", {"playing": True})
@@ -237,7 +245,7 @@ async def play() -> dict:
                 await next_step()
                 step = STEPS[state.step - 1]
                 if step.duration_s:
-                    await asyncio.sleep(step.duration_s)
+                    await asyncio.sleep(step.duration_s / speed)
         finally:
             state.playing = False
             bus.publish("demo.playing", {"playing": False})

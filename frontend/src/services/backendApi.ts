@@ -84,7 +84,7 @@ export const backendApi = {
   demoStart: (regenerate = false) =>
     post<Record<string, any>>(`/api/demo/start?regenerate=${regenerate}`),
   demoNext: () => post<Record<string, any>>('/api/demo/next'),
-  demoPlay: () => post<Record<string, any>>('/api/demo/play'),
+  demoPlay: (speed = 1) => post<Record<string, any>>(`/api/demo/play?speed=${speed}`),
   demoPause: () => post<Record<string, any>>('/api/demo/pause'),
   demoReset: () => post<Record<string, any>>('/api/demo/reset'),
   generateScenario: () => post<Record<string, any>>('/api/scenarios/generate'),
