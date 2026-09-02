@@ -103,7 +103,13 @@ export const STAGES: StageDef[] = [
       + 'incident two independent methods disagree about is not low-risk, it is one nobody has '
       + 'understood yet.',
     source: 'app/services/assist.py · analyse_window(), independent_assessment(), reconcile()',
-    triggers: ['ai.thinking', 'ai.triage', 'ai.analysis', 'ai.verdicts', 'ai.score'],
+    // `ai.thinking` is deliberately NOT a trigger. It announces that the
+    // model has been asked, not that it has answered — marking the stage
+    // Done on it produced a card reading "AI decision intelligence idle"
+    // directly beneath a stage badge reading Done, which is the sort of
+    // contradiction that costs you the room. The stage now completes only
+    // when the model actually returns something.
+    triggers: ['ai.triage', 'ai.analysis', 'ai.verdicts', 'ai.score'],
     headline: 'ai.verdicts',
   },
   {
@@ -305,6 +311,7 @@ class LiveThreatStore {
   private seq = 0;
   private enriching = false;
   private enrichAgain = false;
+  private seenIncidents = new Set<string>();
 
   constructor() {
     socStore.subscribePipeline((m) => this.ingest(m));
@@ -363,14 +370,16 @@ class LiveThreatStore {
       };
       const incoming = rank[String(p?.severity ?? '').toLowerCase()] ?? 1;
       const current = rank[String(this.ruleCard?.severity ?? '').toLowerCase()] ?? -1;
+      // Both cards move together. They previously drifted apart — the
+      // event card pinned to the first alert seen while the rule card
+      // escalated — so the page showed a MEDIUM beacon next to a CRITICAL
+      // credential dump and implied they were the same finding.
       if (!this.ruleCard || incoming > current) {
         this.ruleCard = {
           ruleId: p?.rule_id ?? '', title: p?.title ?? '',
           severity: p?.severity ?? '', technique: p?.technique ?? '',
           tactic: p?.tactic ?? '', origin: p?.origin ?? 'rule',
         };
-      }
-      if (!this.eventCard) {
         this.eventCard = {
           id: p?.alert_id ?? '', severity: p?.severity ?? '',
           source: p?.origin === 'rule' ? 'Detection rule' : 'AI triage',
@@ -400,8 +409,16 @@ class LiveThreatStore {
       };
     }
 
-    if (p?.incident_id && p.incident_id !== this.incidentId) {
-      this.incidentId = p.incident_id;
+    // Remember every incident this run touched, but do not blindly adopt
+    // the newest one. A run creates several incidents — the attack plus
+    // whatever low-risk noise correlates separately — and the frames
+    // arrive in ingest order, so taking the latest pinned the card to
+    // whichever trivial incident was written last: a 6/100 case for a
+    // different user than the alert card above it. The attack is the
+    // highest-scoring incident of the run, and enrich() picks it.
+    if (p?.incident_id) {
+      this.seenIncidents.add(p.incident_id);
+      if (!this.incidentId) this.incidentId = p.incident_id;
     }
 
     // Frames carry ids and counts, not full records. Anything richer than
@@ -410,6 +427,26 @@ class LiveThreatStore {
       'action.pending', 'action.executed'].includes(m.kind)) {
       void this.enrich();
     }
+  }
+
+  /**
+   * Of the incidents this run touched, adopt the highest-scoring one.
+   *
+   * That is what "the threat" means to anyone watching: a run emits an
+   * attack chain plus incidental low-risk correlations, and the card
+   * should describe the attack. Scores climb as the chain progresses, so
+   * this is re-evaluated on every enrich rather than fixed at first sight.
+   */
+  private async pickWorstIncident() {
+    if (this.seenIncidents.size < 2) return;
+    const res: any = await backendApi.listIncidents('all').catch(() => null);
+    const items: any[] = Array.isArray(res) ? res : (res?.items ?? []);
+    let best: any = null;
+    for (const row of items) {
+      if (!this.seenIncidents.has(row.incident_id)) continue;
+      if (!best || (row.risk_score ?? 0) > (best.risk_score ?? 0)) best = row;
+    }
+    if (best) this.incidentId = best.incident_id;
   }
 
   /** Read the incident, its actions and the ledger back from the API. */
@@ -423,6 +460,9 @@ class LiveThreatStore {
     if (this.enriching) { this.enrichAgain = true; return; }
     this.enriching = true;
     try {
+      // Promote to the worst incident this run produced before reading it.
+      await this.pickWorstIncident();
+
       const [inc, actions, ledger] = await Promise.all([
         backendApi.getIncident(this.incidentId).catch(() => null),
         backendApi.listActions().catch(() => []),
@@ -493,6 +533,7 @@ class LiveThreatStore {
     this.frames = emptyBy<Frame[]>(() => []);
     this.feed = [];
     this.incidentId = '';
+    this.seenIncidents.clear();
     this.eventCard = null; this.ruleCard = null; this.incidentCard = null;
     this.verdictCard = null; this.planCard = null; this.actionCards = [];
     this.ledgerRecords = null; this.ledgerLatestHash = '';

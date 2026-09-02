@@ -527,6 +527,18 @@ export const LiveThreatPage: React.FC = () => {
                 <Field label="Plan steps" value={String(s.planCard.steps)} />
                 <Field label="Awaiting approval" value={String(s.planCard.awaiting)} />
               </div>
+              {/* The count is the interesting number on this card, so it
+                  should be the thing you can act on. Without a way through
+                  to the queue the card states that something is waiting on
+                  a human and then leaves you to go find it. */}
+              {s.planCard.awaiting > 0 && (
+                <button
+                  onClick={() => navigate('/approvals')}
+                  className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-soc-accent hover:underline"
+                >
+                  Open the approval queue <ArrowRight className="w-3 h-3" />
+                </button>
+              )}
             </div>
           )}
 

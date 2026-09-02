@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from ulid import ULID
 
 from app import config
-from app.db import get_session
+from app.db import counters, get_session
 from app.models import Alert, Event, Incident, Rule
 
 log = logging.getLogger(__name__)
@@ -936,6 +936,12 @@ def _assign(s: Session, alert_dict: dict) -> Incident | None:
     s.add(inc)
     s.flush()
     alert.incident_id = inc.incident_id
+    # `counters.incidents` was initialised to zero and then never touched by
+    # anything, so every consumer of the live counter snapshot — the
+    # dashboard tile and the socket frame both — reported "incidents 0"
+    # while incidents were plainly being created. Count them where they are
+    # actually created.
+    counters.bump("incidents")
     return inc
 
 
