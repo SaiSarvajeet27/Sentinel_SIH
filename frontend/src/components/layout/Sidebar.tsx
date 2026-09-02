@@ -10,6 +10,7 @@ import {
   Shield,
   ShieldCheck,
   Flame,
+  BarChart3,
 } from 'lucide-react';
 import { useSOC } from '../common/SOCContext';
 import { useTheme } from '../common/ThemeContext';
@@ -47,6 +48,7 @@ export const Sidebar: React.FC = () => {
     },
     { path: '/rules', label: 'Trust & Rules', icon: Sliders },
     { path: '/evidence', label: 'Evidence & Audit', icon: FileText },
+    { path: '/performance-matrix', label: 'Performance Matrix', icon: BarChart3 },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];
 

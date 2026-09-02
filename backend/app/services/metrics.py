@@ -209,8 +209,22 @@ def ops_summary(s: Session) -> dict:
 
     detect_times, respond_times = [], []
     for inc in incidents:
-        detect_times.append((inc.created_at - inc.first_seen).total_seconds()
-                            if inc.created_at and inc.first_seen else 0)
+        # `created_at` is wall-clock (when the row was written); `first_seen`
+        # is on the *event* clock (synthetic telemetry timestamps). The two
+        # are not the same clock, so subtracting one from the other produced
+        # a meaningless number — and, whenever the event stream ran ahead of
+        # wall time, a negative one. A negative mean-time-to-detect is not a
+        # small inaccuracy; it is a figure that cannot be true, on a panel
+        # whose entire purpose is to be believed.
+        #
+        # Both of these are on the event clock, so the difference is real:
+        # how long the attack went on between its earliest correlated
+        # evidence and its most recent. Detection itself is synchronous
+        # inside process_batch, so per-event latency is sub-second by
+        # construction and is reported separately rather than averaged here.
+        if inc.first_seen and inc.last_seen:
+            span = (inc.last_seen - inc.first_seen).total_seconds()
+            detect_times.append(max(0.0, span))
     for a in s.query(Action).filter(Action.executed_at.isnot(None)):
         if a.requested_at:
             respond_times.append((a.executed_at - a.requested_at).total_seconds())
@@ -409,3 +423,167 @@ def playbook_stats(s: Session) -> list[dict]:
           "last_used": r.last_used.isoformat() if r.last_used else None}
          for r in rows],
         key=lambda d: -d["used"])
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  QUANTITATIVE PERFORMANCE MATRIX
+#
+#  Every figure here is measured against something the system did not
+#  choose for itself. Detection is scored against `truth_technique`, which
+#  is stamped on attack events at generation and which no detection rule
+#  reads — so recall is a real measurement rather than the system grading
+#  its own homework. Analyst agreement is counted from decisions humans
+#  actually made. The governance figures are counted from the action table.
+#
+#  Where something genuinely cannot be measured yet — no run has been
+#  labelled, nobody has approved anything — the metric returns None and the
+#  interface says so, rather than showing a plausible number. A panel that
+#  exists to demonstrate rigour cannot afford an invented figure on it, and
+#  "not measured yet" is a perfectly respectable answer.
+# ══════════════════════════════════════════════════════════════════════
+
+def performance_matrix(s: Session) -> dict:
+    from app import config
+    from app.services.pipeline import RULES
+
+    bench = benchmark(s)
+    ops = ops_summary(s)
+    labelled = bench.get("status") == "ok"
+
+    tech = bench.get("techniques", {}) if labelled else {}
+    evts = bench.get("events", {}) if labelled else {}
+    fps = bench.get("false_positives", {}) if labelled else {}
+
+    # How much of the technique catalogue the written rules actually
+    # address — counted from the rules, not asserted in a slide.
+    rule_techniques = {r.technique for r in RULES if r.technique}
+    catalogue = set(config.TECHNIQUE_CATALOGUE)
+    coverage = (len(rule_techniques & catalogue) / len(catalogue)
+                if catalogue else None)
+
+    events = s.query(Event).count()
+    alerts = s.query(Alert).count()
+    open_inc = s.query(Incident).filter(Incident.status == "open").count()
+
+    decided = s.query(Action).filter(
+        Action.status.in_(["executed", "rejected", "rolled_back"])).count()
+    accepted = s.query(Action).filter(Action.status == "executed").count()
+
+    # The governance invariant the whole project rests on: nothing at tier 2
+    # or above ever executed without a named human on it. This counts
+    # violations, so the expected answer is zero — and a non-zero number
+    # would be the most important thing on the page.
+    high_tier = s.query(Action).filter(
+        Action.tier >= 2, Action.status == "executed").all()
+    unapproved = [a for a in high_tier if not (a.approved_by or [])]
+    tier3 = [a for a in high_tier if a.tier >= 3]
+    tier3_bad = [a for a in tier3 if len(set(a.approved_by or [])) < 2]
+
+    ai_alerts = s.query(Alert).filter(
+        Alert.origin.in_(["ai_triage", "ai_analysis"])).count()
+    ai_over_cap = s.query(Alert).filter(
+        Alert.origin.in_(["ai_triage", "ai_analysis"]),
+        Alert.severity.in_(["high", "critical"])).count()
+    injections = s.query(Alert).filter(
+        Alert.rule_id == "INJECTION_ATTEMPT").count()
+
+    scored = s.query(Incident).filter(Incident.ai_score_delta.isnot(None)).all()
+    moved = [i for i in scored if (i.ai_score_delta or 0) != 0]
+    mean_delta = (round(sum(abs(i.ai_score_delta or 0) for i in moved)
+                        / len(moved), 1) if moved else 0.0)
+
+    def pct(x):
+        return None if x is None else round(x * 100, 1)
+
+    def m(key, label, value, target, higher, unit, basis, note=""):
+        return {"key": key, "label": label, "value": value, "target": target,
+                "higher_is_better": higher, "unit": unit, "basis": basis,
+                "note": note}
+
+    no_run = "no labelled run yet"
+    metrics = [
+        m("technique_recall", "Technique detection recall",
+          pct(tech.get("recall")) if labelled else None, 95.0, True, "%",
+          ("%d of %d planted techniques detected"
+           % (tech.get("detected", 0), tech.get("planted", 0)))
+          if labelled else no_run,
+          "Scored against ground truth that no detection rule can read."),
+        m("event_recall", "Attack-event recall",
+          pct(evts.get("recall")) if labelled else None, 80.0, True, "%",
+          ("%d of %d attack events raised an alert"
+           % (evts.get("detected", 0), evts.get("planted", 0)))
+          if labelled else no_run,
+          "Lower than technique recall by design — a technique only has to "
+          "be caught once to be caught."),
+        m("false_positive_rate", "False-positive rate",
+          pct(fps.get("rate")) if labelled else None, 5.0, False, "%",
+          ("{:,} alerts across {:,} benign events".format(
+              fps.get("alerts_on_benign_events", 0),
+              fps.get("benign_events", 0)))
+          if labelled else no_run,
+          "On a synthetic run every unplanted event is benign by "
+          "construction, so this is exact rather than estimated."),
+        m("catalogue_coverage", "ATT&CK catalogue coverage",
+          pct(coverage), 80.0, True, "%",
+          "%d of %d catalogued techniques have a written rule"
+          % (len(rule_techniques & catalogue), len(catalogue)),
+          "Counted from the rules themselves."),
+        m("triage_reduction", "Triage reduction",
+          round((1 - open_inc / events) * 100, 3) if events else None,
+          99.0, True, "%",
+          "{:,} events to {:,} alerts to {:,} open incidents".format(
+              events, alerts, open_inc),
+          "What an analyst is actually asked to look at."),
+        m("mttr_seconds", "Mean time to respond",
+          ops.get("mttr_seconds"), 30.0, False, "s",
+          "request to execution, wall clock",
+          "Measured across every executed action."),
+        m("detection_span", "Mean incident span",
+          ops.get("mttd_seconds"), None, False, "s",
+          "first correlated evidence to latest, event clock",
+          "Per-event detection is synchronous and sub-second; this is how "
+          "long an attack ran before its picture was complete."),
+        m("analyst_agreement", "Analyst agreement",
+          round(accepted / decided * 100, 1) if decided else None,
+          85.0, True, "%",
+          ("%d of %d decided actions let stand" % (accepted, decided))
+          if decided else "no decisions yet",
+          "Rolled-back actions count as decided but not as accepted."),
+    ]
+
+    governance = [
+        {"key": "tier2_unapproved",
+         "label": "Tier 2+ executed without approval",
+         "value": len(unapproved), "expected": 0,
+         "basis": "checked %d executed tier-2+ actions" % len(high_tier),
+         "ok": len(unapproved) == 0},
+        {"key": "tier3_single_signer",
+         "label": "Tier 3 executed with one signer",
+         "value": len(tier3_bad), "expected": 0,
+         "basis": "checked %d executed tier-3 actions" % len(tier3),
+         "ok": len(tier3_bad) == 0},
+        {"key": "ai_over_severity_cap",
+         "label": "AI alerts above the severity cap",
+         "value": ai_over_cap, "expected": 0,
+         "basis": "checked %d AI-raised alerts against a %s ceiling"
+                  % (ai_alerts, config.TRIAGE_MAX_SEVERITY),
+         "ok": ai_over_cap == 0},
+    ]
+
+    return {
+        "metrics": metrics,
+        "governance": governance,
+        "ai": {
+            "alerts_raised": ai_alerts,
+            "injections_blocked": injections,
+            "incidents_scored": len(scored),
+            "incidents_moved": len(moved),
+            "mean_abs_delta": mean_delta,
+            "clamp_up": config.AI_SCORE_MAX_UP,
+            "clamp_down": config.AI_SCORE_MAX_DOWN,
+        },
+        "volume": {"events": events, "alerts": alerts,
+                   "open_incidents": open_inc},
+        "labelled_run": labelled,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }

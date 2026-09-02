@@ -94,6 +94,7 @@ export const backendApi = {
   timeseries: (metric = 'alerts', window = '24h') =>
     get<Record<string, any>>(`/api/metrics/timeseries?metric=${metric}&window=${window}`),
   health: () => get<Record<string, any>>('/api/health'),
+  performance: () => get<Record<string, any>>('/api/performance'),
   benchmark: () => get<Record<string, any>>('/api/benchmark'),
 
   // ── incidents ────────────────────────────────────────────────────────

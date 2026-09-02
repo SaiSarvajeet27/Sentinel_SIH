@@ -348,6 +348,19 @@ def health(s: Session = Depends(db_dep)):
     return metrics.health_score(s)
 
 
+@app.get("/api/performance")
+def performance(s: Session = Depends(db_dep)):
+    """The quantitative evaluation matrix.
+
+    Every figure is measured rather than asserted — detection against
+    ground truth no rule can read, agreement against decisions humans
+    actually made, and the governance invariants counted from the action
+    table. Anything not yet measurable comes back null so the interface
+    can say so instead of showing a plausible number.
+    """
+    return metrics.performance_matrix(s)
+
+
 @app.get("/api/benchmark")
 def benchmark(run_id: str | None = None, s: Session = Depends(db_dep)):
     """Detection rate against ground truth we generated ourselves.

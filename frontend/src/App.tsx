@@ -12,6 +12,7 @@ import { EvidenceAuditPage } from './pages/EvidenceAuditPage';
 import { TrustRulesPage } from './pages/TrustRulesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LiveThreatSimulationPage } from './pages/LiveThreatSimulationPage';
+import { PerformanceMatrixPage } from './pages/PerformanceMatrixPage';
 
 const ProtectedLayout: React.FC = () => {
   const { isAuthenticated, authLoading } = useSOC();
@@ -45,6 +46,7 @@ export const App: React.FC = () => {
               <Route path="approvals" element={<HumanApprovalPage />} />
               <Route path="evidence" element={<EvidenceAuditPage />} />
               <Route path="rules" element={<TrustRulesPage />} />
+              <Route path="performance-matrix" element={<PerformanceMatrixPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
