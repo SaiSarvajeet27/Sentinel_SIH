@@ -306,6 +306,9 @@ class LiveThreatStore {
   actionCards: ActionCard[] = [];
   ledgerRecords: number | null = null;
   ledgerLatestHash = '';
+  /** Full payloads, so the per-stage panel can explain rather than list. */
+  incidentFull: any = null;
+  ledgerRows: any[] = [];
 
   private listeners = new Set<() => void>();
   private seq = 0;
@@ -470,6 +473,7 @@ class LiveThreatStore {
       ]);
 
       if (inc) {
+        this.incidentFull = inc;
         // GET /api/incidents/{id} serialises the entity list as
         // `entities`; the ORM column is `entity_ids`. Read both so the
         // card fills in whichever shape it is handed.
@@ -516,6 +520,7 @@ class LiveThreatStore {
       }
 
       if (Array.isArray(ledger) && ledger.length) {
+        this.ledgerRows = ledger;
         this.ledgerRecords = ledger.length;
         const top: any = ledger[0];
         this.ledgerLatestHash = String(top?.entry_hash ?? '').slice(0, 16);
@@ -537,6 +542,7 @@ class LiveThreatStore {
     this.eventCard = null; this.ruleCard = null; this.incidentCard = null;
     this.verdictCard = null; this.planCard = null; this.actionCards = [];
     this.ledgerRecords = null; this.ledgerLatestHash = '';
+    this.incidentFull = null; this.ledgerRows = [];
     this.currentStage = '';
     this.startedAt = Date.now();
     if (stopRunning) { this.running = false; this.startedAt = null; }

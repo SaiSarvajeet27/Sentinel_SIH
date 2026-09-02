@@ -21,6 +21,7 @@ import {
 import { useSOC } from '../components/common/SOCContext';
 import { backendApi } from '../services/backendApi';
 import { liveThreatStore, STAGES, type StageKey } from '../services/liveThreatStore';
+import { StageDetail } from '../components/live/StageDetail';
 
 const SPEEDS = [0.5, 1, 2, 4];
 
@@ -314,22 +315,35 @@ export const LiveThreatPage: React.FC = () => {
                   <h4 className="text-[10px] font-bold uppercase tracking-wider text-soc-accent mb-1.5">
                     What it did to this threat
                   </h4>
-                  {frames.length === 0 ? (
-                    <p className="text-[11.5px] text-soc-textMuted italic">
-                      This stage has not run yet for the current threat.
-                    </p>
-                  ) : (
-                    <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
-                      {frames.map((f) => (
-                        <div key={f.id} className="font-mono text-[10.5px] flex gap-2 items-baseline">
-                          <span className="text-soc-textMuted tabular-nums shrink-0">{hhmmss(f.at)}</span>
-                          <span className="shrink-0 px-1 rounded text-[9px] font-bold uppercase bg-soc-accent/15 text-soc-accent">
-                            {f.kind}
-                          </span>
-                          <span className="text-soc-textSecondary break-all">{f.text}</span>
-                        </div>
-                      ))}
-                    </div>
+                  <StageDetail
+                    stage={def.key}
+                    incident={s.incidentFull}
+                    actions={s.actionCards}
+                    ledger={s.ledgerRows}
+                    frames={frames}
+                    scenario={s.scenario}
+                  />
+
+                  {/* The raw frames stay available underneath. They are the
+                      proof behind the account above — collapsed, because a
+                      judge wants the reading first and the receipts second. */}
+                  {frames.length > 0 && (
+                    <details className="mt-3">
+                      <summary className="text-[10px] font-bold uppercase tracking-wider text-soc-textMuted cursor-pointer hover:text-soc-textSecondary">
+                        Raw socket frames ({frames.length})
+                      </summary>
+                      <div className="mt-1.5 space-y-1 max-h-44 overflow-y-auto pr-1">
+                        {frames.map((f) => (
+                          <div key={f.id} className="font-mono text-[10.5px] flex gap-2 items-baseline">
+                            <span className="text-soc-textMuted tabular-nums shrink-0">{hhmmss(f.at)}</span>
+                            <span className="shrink-0 px-1 rounded text-[9px] font-bold uppercase bg-soc-accent/15 text-soc-accent">
+                              {f.kind}
+                            </span>
+                            <span className="text-soc-textSecondary break-all">{f.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
                   )}
                 </div>
               </div>
