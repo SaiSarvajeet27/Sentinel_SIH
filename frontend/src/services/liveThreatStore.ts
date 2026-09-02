@@ -46,69 +46,132 @@ export const STAGES: StageDef[] = [
     key: 'generated', n: 1, label: 'Event Generated',
     blurb: 'Attack scenario authored and synthetic telemetry emitted.',
     detail:
-      'A language model writes a complete attack plan — the victim, the lure, the technique '
-      + 'sequence — which is then expanded into ordinary-looking telemetry and mixed into the '
-      + 'normal traffic of a simulated organisation: twenty-five staff across twelve machines, '
-      + 'roughly thirty thousand events an hour.\n\n'
-      + 'If the model is unavailable or out of quota the router falls back automatically, and '
-      + 'past that a deterministic template takes over, so a run never fails for want of an '
-      + 'API key.',
-    source: 'app/services/scenario.py · app/services/demo.py · start()',
+      'A language model is asked for a complete attack plan as structured JSON: who the '
+      + 'victim is, what the lure says, and which MITRE techniques the intrusion will use, in '
+      + 'order. Scenario generation is the one task routed to Gemini 2.5 Flash by default, '
+      + 'because it runs once per cycle and is pure fiction rather than a reading of real '
+      + 'telemetry. If Gemini is unavailable or out of daily quota the router falls through to '
+      + 'Groq, then to a local Ollama model, and past all three to a deterministic template — '
+      + 'so a run never fails for want of an API key, it only changes who wrote the story.\n\n'
+      + 'That plan is then expanded into telemetry and mixed into the ordinary traffic of a '
+      + 'simulated organisation: twenty-five staff across twelve machines, generating roughly '
+      + 'thirty thousand events an hour from four sources — endpoint, identity, email and '
+      + 'network. The attack is a few dozen events inside that. It is deliberately not made '
+      + 'easy to find, because a detector that only works when you already know where to look '
+      + 'is not a detector.\n\n'
+      + 'Every event is written with a stable id, a timestamp, its source, and a SHA-256 hash '
+      + 'of its original form. That hash is what lets an analyst confirm, hours later, that '
+      + 'the evidence in front of them is byte-for-byte what arrived — nothing in the pipeline '
+      + 'can quietly edit an event after the fact without the hash disagreeing.\n\n'
+      + 'Attack events are also stamped with the technique they were written to represent. '
+      + 'That field exists only so /api/benchmark can measure detection recall honestly, and '
+      + 'no detection rule reads it — otherwise the measurement would be circular, and the '
+      + 'system would be grading its own homework.',
+    source: 'app/services/scenario.py · app/services/demo.py · start(), _ingest()',
     triggers: ['demo.started', 'demo.step'], headline: 'demo.step',
   },
   {
     key: 'processed', n: 2, label: 'Event Processed',
     blurb: 'Normalisation, untrusted-field isolation and multi-source correlation.',
     detail:
-      'Each event is stored with a SHA-256 hash of its original form, so it can never be '
-      + 'silently edited afterwards. Every attacker-controlled field — filename, email subject '
-      + 'and body, command line, user agent — is isolated into a separate "untrusted" map '
-      + 'before anything else touches it.\n\n'
-      + 'That map is normalised, stripped of zero-width and direction-override characters, and '
-      + 'scanned for prompt injection. Nothing reaches a language model without crossing this '
-      + 'boundary first, and an injection attempt is not merely removed — it is raised as a '
-      + 'high-severity alert in its own right.',
-    source: 'app/services/pipeline.py · process_batch() · app/services/sanitise.py',
+      'Before anything else reads an event, the parts of it an attacker could have chosen are '
+      + 'separated from the parts the infrastructure recorded. Filename, email subject and '
+      + 'body, command line, user agent, DNS query and authenticating username all move into '
+      + 'an "untrusted" map. Everything downstream — including every prompt — treats that map '
+      + 'as hostile input rather than as fact.\n\n'
+      + 'Each untrusted value is then cleaned in a fixed order. Unicode is NFKC-normalised so '
+      + 'lookalike characters collapse to their plain forms; zero-width and bidirectional '
+      + 'override characters are removed, since both exist to hide text from a human reader '
+      + 'while leaving it visible to a parser; control characters are dropped; whitespace is '
+      + 'collapsed; and the result is truncated to a per-field ceiling — 200 characters for a '
+      + 'filename, 500 for a command line, 1000 for an email body — so no single field can '
+      + 'flood a model’s context.\n\n'
+      + 'The cleaned text is then scanned for three classes of prompt injection: persona '
+      + 'hijack, where the text impersonates an authority such as "[SOC ADMIN]:"; directive '
+      + 'injection, which pairs a command word with a benign verdict, as in "ignore … mark as '
+      + 'safe"; and context manipulation, which fakes structure such as a closing log tag or a '
+      + '"Final verdict:" line. Only the matched span is redacted, so the surrounding text '
+      + 'survives as evidence.\n\n'
+      + 'A hit is not simply removed. It is raised as its own high-severity alert under '
+      + 'T1565, because a legitimate filename does not contain instructions addressed to an AI '
+      + 'system. Finding one means the adversary knows the defender runs AI tooling, which '
+      + 'describes a more capable attacker — so the attempt is evidence in its own right, not '
+      + 'noise to be filtered away.\n\n'
+      + 'Text that does reach a model is finally interleaved with an invisible marker between '
+      + 'words, so the model can tell data from instruction at the token level rather than '
+      + 'relying on delimiters alone, which are trivially closed by an attacker.',
+    source: 'app/services/sanitise.py · app/services/pipeline.py · process_batch()',
     triggers: ['counters'], headline: 'counters',
   },
   {
     key: 'sigma', n: 3, label: 'Sigma Rule Detection',
     blurb: 'Deterministic rules evaluated in-process. Every hit names the rule that fired.',
     detail:
-      'Eleven Sigma-format rules are evaluated against each event in process — an Office '
-      + 'document spawning a script engine, PowerShell with an encoded command, credential '
-      + 'material read from process memory, shadow copies deleted, mass file encryption. A '
-      + 'match produces an alert carrying the rule id, the MITRE technique and a severity that '
-      + 'was decided when the rule was written, not at detection time.\n\n'
-      + 'Rules only catch what somebody already thought to write down, so a statistical '
-      + 'baseline runs alongside them and flags what is merely unusual for this environment. '
-      + 'Those anomalies are the only events the language model is ever shown, and an alert '
-      + 'the model raises is capped at medium severity — only a written rule, reviewable in '
-      + 'advance, may call something critical.',
-    source: 'app/services/pipeline.py · DetectionRule, Baseline',
+      'Eleven Sigma-format rules are evaluated against every event in process. Each rule is a '
+      + 'set of field patterns — an Office application spawning a script engine, PowerShell '
+      + 'carrying an encoded command, a macro-enabled attachment, scheduled-task persistence, '
+      + 'credential material read from process memory, domain account enumeration, endpoint '
+      + 'protection being disabled, shadow copies deleted, mass file encryption, access to an '
+      + 'administrative share, and a connection to an unfamiliar external address.\n\n'
+      + 'A match produces an alert carrying the rule id, the MITRE technique and tactic, and a '
+      + 'severity that was decided when the rule was written rather than at detection time. '
+      + 'That ordering matters: it means every critical alert traces back to a judgement '
+      + 'someone made in advance and can be argued with, rather than to a decision made in the '
+      + 'moment by something that cannot be cross-examined.\n\n'
+      + 'Rules only catch what somebody already thought to write down, so a purely statistical '
+      + 'baseline runs alongside them. It learns what is normal here by counting — which '
+      + 'processes this host runs, which machines this account touches, at what hours — and '
+      + 'needs three hundred events before it will claim to know anything. It then flags '
+      + 'events that are merely unusual, and an event must carry at least two independent '
+      + 'oddities before it is considered at all, so a single quirk is not enough.\n\n'
+      + 'Those anomalies, capped at forty per run and one model call, are the only events the '
+      + 'language model is ever shown for detection. What it can do with them is bounded '
+      + 'before it starts: an AI-raised alert can never exceed medium severity, it may only '
+      + 'name a technique from a closed catalogue of fourteen, and it must clear a confidence '
+      + 'threshold. The severity cap is enforced by a database CHECK constraint on the alert’s '
+      + 'origin column, not by a prompt — only a written rule, reviewable beforehand, may call '
+      + 'something critical.\n\n'
+      + 'One rule was deliberately deleted during development and the reason is worth stating: '
+      + 'a "first time this account authenticated here" rule fired twenty-four times in '
+      + 'forty-five minutes of an ordinary working day and correlated into a single incident '
+      + 'scoring 98 on a day when nothing happened. A signal that fires on ordinary behaviour '
+      + 'is not a detection; it is an anomaly, and it belongs in the baseline where it must be '
+      + 'corroborated before anyone is told.',
+    source: 'app/services/pipeline.py · RULES, evaluate(), Baseline, admit_ai_alerts()',
     triggers: ['alert'], headline: 'alert',
   },
   {
     key: 'ai', n: 4, label: 'AI Evaluation',
     blurb: 'The model reads the same window blind and returns its own verdict.',
     detail:
-      'The model reads a digest of the same event window and produces its own written analysis '
-      + 'and its own risk score from zero to one hundred. It is not told what the rules found '
-      + 'or what the arithmetic scored, because an opinion formed after seeing the first '
-      + 'opinion is not an independent one.\n\n'
-      + 'The two verdicts are reconciled rather than averaged: the system acts on whichever is '
-      + 'more worried, and the model may escalate by at most twenty-five points. If the two '
-      + 'land two severity bands or thirty points apart, the incident is flagged as a '
-      + 'disagreement and forced to human review no matter how low both scores are — an '
-      + 'incident two independent methods disagree about is not low-risk, it is one nobody has '
-      + 'understood yet.',
+      'The model is given a digest of the same event window the rules just processed — up to '
+      + 'four hundred events summarised, of which twenty-five are shown in full — and asked '
+      + 'for two things: a written analysis of what it believes happened, and its own risk '
+      + 'score from zero to one hundred.\n\n'
+      + 'It is not told what the rules found, what the arithmetic scored, or that a '
+      + 'deterministic path exists at all. This is the whole point of the design: an opinion '
+      + 'formed after seeing the first opinion is not an independent one, and two analysts who '
+      + 'have conferred provide roughly one analyst’s worth of assurance.\n\n'
+      + 'Every claim the model makes must be tied to a specific event id. Claims that cannot '
+      + 'be matched against the evidence are removed before an analyst sees them, and the '
+      + 'system records what it deleted and why. This is the answer to hallucination that does '
+      + 'not depend on the model behaving — unsupported statements simply do not reach the '
+      + 'person making the decision.\n\n'
+      + 'The two verdicts are then reconciled rather than averaged. The system acts on '
+      + 'whichever is more worried, the way a dual-sensor safety system believes the lower '
+      + 'altimeter instead of splitting the difference. The model may carry the final number '
+      + 'up by at most twenty-five points; separately, when asked to adjust a score it has '
+      + 'been shown, it may move it up by fifteen and down by only ten. That asymmetry is '
+      + 'deliberate — a model that has been talked into "this is fine" can soften a number '
+      + 'slightly, but it can never dismiss anything.\n\n'
+      + 'If a technique from the critical set is present — ransomware encryption, recovery '
+      + 'inhibition, credential dumping from LSASS, cloud account abuse — a floor of seventy-'
+      + 'five applies that no amount of model reasoning may cross.\n\n'
+      + 'And if the two paths land two severity bands or thirty points apart, that '
+      + 'disagreement is itself treated as a finding: the incident is forced into human review '
+      + 'regardless of how low both scores were. An incident that two independent methods '
+      + 'disagree about is not a low-risk incident. It is one that nobody has understood yet.',
     source: 'app/services/assist.py · analyse_window(), independent_assessment(), reconcile()',
-    // `ai.thinking` is deliberately NOT a trigger. It announces that the
-    // model has been asked, not that it has answered — marking the stage
-    // Done on it produced a card reading "AI decision intelligence idle"
-    // directly beneath a stage badge reading Done, which is the sort of
-    // contradiction that costs you the room. The stage now completes only
-    // when the model actually returns something.
     triggers: ['ai.triage', 'ai.analysis', 'ai.verdicts', 'ai.score'],
     headline: 'ai.verdicts',
   },
@@ -116,79 +179,148 @@ export const STAGES: StageDef[] = [
     key: 'incident', n: 5, label: 'Incident Created',
     blurb: 'Related alerts grouped on the entity graph and scored across the kill chain.',
     detail:
-      'Users, hosts, processes, files and addresses become nodes in a weighted graph; the '
-      + 'relationships between them become edges, where a strong link such as "executed" costs '
-      + 'less to traverse than a weak one such as a DNS lookup. Two alerts join the same '
-      + 'incident when a path between their entities costs less than the hop budget and they '
-      + 'fall inside the same window. Highly connected nodes — a file server everything '
-      + 'touches — are excluded, so shared infrastructure does not merge unrelated activity.\n\n'
-      + 'Scoring is by progression, not volume. Fourteen MITRE tactics collapse into seven '
-      + 'canonical stages, and the score reflects how far through the lifecycle the attack has '
-      + 'travelled: one stage scores twelve, seven stages scores ninety-five. Certain '
-      + 'techniques are critical alone regardless of breadth — ransomware encryption, recovery '
-      + 'inhibition, credential dumping — and set a floor of seventy-five.',
-    source: 'app/services/pipeline.py · Graph, _assign(), score_incident()',
+      'Alerts on their own are not useful — a phishing email, a PowerShell launch and a file-'
+      + 'server login are three separate rows until something establishes they are the same '
+      + 'attack. That is what the entity graph does. Users, hosts, processes, files and '
+      + 'addresses become nodes, and the relationships between them become weighted edges.\n\n'
+      + 'The weights encode how much a relationship actually implies. Executing a process, '
+      + 'logging into a host and spawning a child all cost 1.0; accessing a file or sending '
+      + 'mail costs 1.5; an outbound connection 2.0; a DNS lookup 3.0. Low cost means a strong '
+      + 'link, because the number is used as path weight — two alerts join the same incident '
+      + 'only when a path between their entities costs less than a budget of 3.0 and they fall '
+      + 'inside the same sixty-minute sliding window.\n\n'
+      + 'Nodes above the ninety-fifth percentile for connectivity are excluded as bridges. '
+      + 'Without that, a file server everything touches would link every event in the '
+      + 'organisation into a single incident — shared infrastructure is not evidence of a '
+      + 'relationship. Incidents are also scoped to their own run, so a fresh attack can never '
+      + 'be absorbed into a case from hours earlier.\n\n'
+      + 'Scoring is then done by progression, not volume. MITRE’s fourteen tactics collapse '
+      + 'into seven canonical stages, and the score is read off a curve keyed to how many of '
+      + 'those stages the intrusion has reached: one stage scores 12, three score 40, five '
+      + 'score 70, all seven score 95. Ten alerts from a single stage remain a one-stage '
+      + 'incident. This is deliberate — counting alerts rewards noisy rules and lets an '
+      + 'attacker bury a real intrusion under volume, while counting progression measures how '
+      + 'far they actually got.\n\n'
+      + 'Asset criticality, the privilege of the accounts involved and the velocity of the '
+      + 'activity adjust the result, and certain techniques are treated as critical on their '
+      + 'own regardless of breadth. The purely arithmetic figure is stored separately as '
+      + '`base_score`, so the question "what would this have scored without any AI involvement" '
+      + 'stays answerable after the fact rather than being lost in a single blended number.',
+    source: 'app/services/pipeline.py · Graph, _assign(), score_incident(), config.EDGE_WEIGHT',
     triggers: ['incident.updated', 'graph.delta'], headline: 'incident.updated',
   },
   {
     key: 'recommend', n: 6, label: 'Response Recommendation',
     blurb: 'The model drafts the plan. Policy — not the model — assigns each action’s tier.',
     detail:
-      'The model writes the remediation plan in plain English and proposes alternatives with '
-      + 'their trade-offs. That is the limit of its authority. Policy then assigns every action '
-      + 'a tier from zero to three out of a static table, and computes its blast radius — how '
-      + 'many users lose access, which shares go dark, who is affected.\n\n'
-      + 'The tier is what decides whether an action can run on its own, and it comes from a '
-      + 'configuration file the model cannot reach. That is the difference between the model '
-      + 'advising and the model deciding: it can argue for isolating a host, but it cannot make '
-      + 'isolating a host a low-risk operation.',
-    source: 'app/services/remediate.py, respond.py · build_plan(), blast_radius()',
+      'Once an incident is scored, a response is proposed. The model writes the plan in plain '
+      + 'English — what to do, in what order, and why — and offers alternatives with their '
+      + 'trade-offs, so the analyst sees the decision space rather than a single instruction. '
+      + 'Four playbooks also match against the techniques present: phishing response, endpoint '
+      + 'isolation, credential reset and malware containment.\n\n'
+      + 'That is the entire extent of the model’s authority here. Policy then assigns every '
+      + 'proposed action a tier from a static table in the configuration file, which the model '
+      + 'cannot read or influence. Collecting forensics, snapshotting a host, enriching an '
+      + 'indicator and notifying an analyst are tier 0. Quarantining an email, blocking a '
+      + 'hash, forcing re-authentication and revoking a session are tier 1. Suspending an '
+      + 'account, isolating a host and blocking a domain are tier 2. Mass isolation and '
+      + 'disabling a service account are tier 3.\n\n'
+      + 'This separation is the difference between a model advising and a model deciding. It '
+      + 'can argue at length for isolating a host; it cannot make isolating a host a low-risk '
+      + 'operation. The two actions the problem statement names specifically — suspend account '
+      + 'and isolate host — are both tier 2, and therefore both require a named human.\n\n'
+      + 'Each action is also costed before anyone is asked to approve it. Blast radius is '
+      + 'computed from the organisation model: how many users lose access, which shares go '
+      + 'dark, whether the target is a person’s only machine. And reversibility is recorded as '
+      + 'a real window rather than a promise — isolating a host can be undone for twenty-four '
+      + 'hours, suspending an account for seventy-two, a blocked hash for a week.',
+    source: 'app/services/remediate.py, respond.py · build_plan(), blast_radius(), config.TIERS',
     triggers: ['remediation.proposed'], headline: 'remediation.proposed',
   },
   {
     key: 'approval', n: 7, label: 'Human Approval',
     blurb: 'Tier 2 and above stop here and wait for a named, authenticated person.',
     detail:
-      'Tier 0 and 1 actions — collecting forensics, snapshotting a host, quarantining an email, '
-      + 'revoking a session — are read-only or trivially reversible and execute automatically. '
-      + 'Tier 2, which includes isolating a host and suspending an account, stops here and '
-      + 'waits for one named approver. Tier 3 waits for two, from two different accounts.\n\n'
-      + 'The identity and role come from a signed token, never from the request body, so a '
-      + 'client cannot promote itself by asking — an analyst account attempting a tier-2 '
-      + 'approval receives a 403 from the server, not a hidden button. Before deciding, the '
-      + 'approver sees the affected scope, the blast radius, the reversibility window and the '
-      + 'model’s stated reason, and may approve, reject with a reason, override with a '
-      + 'different action, or escalate.',
-    source: 'app/services/respond.py · approve() · app/auth.py',
+      'This is the gate the whole system exists to enforce. Tier 0 and tier 1 actions execute '
+      + 'automatically, because they are read-only or trivially reversible. Tier 2 stops and '
+      + 'waits for one named, authenticated approver. Tier 3 waits for two, and they must be '
+      + 'two different accounts — the same person approving twice is rejected explicitly.\n\n'
+      + 'Authority comes from a signed token, never from the request body, so a client cannot '
+      + 'promote itself by asking. The three roles have strictly increasing permissions: an '
+      + 'analyst may approve nothing, a senior analyst may approve tier 2 and retire detection '
+      + 'rules, and a manager may additionally approve tier 3. An analyst account attempting a '
+      + 'tier-2 approval receives a 403 from the server — the button is not merely hidden, the '
+      + 'API refuses.\n\n'
+      + 'Before deciding, the approver is shown the affected scope, the blast radius, the '
+      + 'reversibility window, the supporting event count and the model’s stated reason. They '
+      + 'then have six responses, and each is recorded as a distinct signal: ask why, which '
+      + 'opens the full reasoning chain and its evidence; review alternatives; approve; reject '
+      + 'with a reason code; override, which rejects and substitutes a different action; or '
+      + 'escalate to a higher authority with justification.\n\n'
+      + 'Override is the most informative of these, because it captures what the analyst did '
+      + '*instead*, which is a richer correction than a plain refusal. Rejections and '
+      + 'overrides both feed the trust score and the per-rule false-positive rate, so the '
+      + 'system’s measured reliability is built out of real human disagreement rather than '
+      + 'asserted.\n\n'
+      + 'System-wide autonomy is bounded too. Four modes exist — always ask, recommend only, '
+      + 'act and notify, and full auto — and act and notify is the default. Full auto is '
+      + 'present in the interface and permanently disabled by policy: the capability was built '
+      + 'and then deliberately not enabled, because a platform that isolates machines with '
+      + 'nobody supervising is exactly what this project argues against.',
+    source: 'app/services/respond.py · approve(), override() · app/auth.py · config.ROLE_PERMISSIONS',
     triggers: ['approval.required', 'action.pending'], headline: 'action.pending',
   },
   {
     key: 'execute', n: 8, label: 'Response Execution',
     blurb: 'The containment action runs, and only once a person has authorised it.',
     detail:
-      'Execution happens only after the gate clears — automatically for tier 0 and 1, or on a '
-      + 'named approval for tier 2 and above. The action records who authorised it and why, '
-      + 'and carries its own inverse: isolating a host stays reversible for twenty-four hours, '
-      + 'suspending an account for seventy-two.\n\n'
-      + 'Once a tier-2 action executes, the incident moves from "open" to "contained" on its '
-      + 'own, because the tier is precisely what marks it disruptive enough to change the '
-      + 'incident’s state. A human can still relabel it afterwards.',
-    source: 'app/services/respond.py · approve(), execute_auto(), rollback()',
+      'Execution happens on one of two paths. Tier 0 and 1 actions run automatically as soon '
+      + 'as the plan is built, under the active autonomy mode, and the analyst is notified '
+      + 'rather than asked. Tier 2 and above run only after the gate clears, at which point '
+      + 'the action records the identity of every approver and the reason they gave.\n\n'
+      + 'Each executed action carries its own inverse. Isolating a host stays reversible for '
+      + 'twenty-four hours, suspending an account for seventy-two, a blocked hash for a week; '
+      + 'quarantining an email is reversible indefinitely. Reversibility is stored as a '
+      + 'property of the action rather than described in prose, so "we can undo this" is a '
+      + 'fact the interface can check rather than a reassurance.\n\n'
+      + 'When a tier-2 action executes, the incident moves from open to contained on its own. '
+      + 'The reasoning is that the tier is precisely what marks an action disruptive enough to '
+      + 'change the state of the incident — if the system was willing to stop and ask a human '
+      + 'before doing it, then doing it is a meaningful change in posture. A human can still '
+      + 'relabel the incident afterwards.\n\n'
+      + 'Every execution, and every rollback, is appended to the audit ledger as it happens, '
+      + 'so the record of what was done is written at the moment it is done rather than '
+      + 'reconstructed later from logs.',
+    source: 'app/services/respond.py · execute_auto(), approve(), rollback()',
     triggers: ['action.executed'], headline: 'action.executed',
   },
   {
     key: 'audit', n: 9, label: 'Audit Recorded',
     blurb: 'Hash-chained and Ed25519-signed, then independently verifiable.',
     detail:
-      'Every AI verdict, every human approval, override and escalation, and every executed '
-      + 'action is appended to a ledger in which each entry carries a SHA-256 hash of the entry '
-      + 'before it and is signed with an Ed25519 private key held outside the application. '
-      + 'Altering any entry breaks every link after it.\n\n'
-      + 'Verification walks the real chain on the server, recomputes each hash and checks each '
-      + 'signature, and reports the exact sequence number of the first break rather than a '
-      + 'pass or fail. That is what makes "a human approved this" a claim you can check rather '
-      + 'than one you have to accept.',
-    source: 'app/services/governance.py · append_ledger(), verify_chain()',
+      'Every AI verdict, every human approval, override, rejection and escalation, and every '
+      + 'executed or rolled-back action is appended to a ledger. Each entry holds a sequence '
+      + 'number, a timestamp, the actor, the action type, the payload, a hash of that payload, '
+      + 'and the hash of the entry immediately before it.\n\n'
+      + 'Those two hashes are what make the record checkable. The entry hash is computed over '
+      + 'the sequence number, timestamp, actor, action type, payload hash and previous entry '
+      + 'hash together, so altering any one of them changes the entry’s own hash — which '
+      + 'breaks the link the next entry holds, and every link after that. Rewriting one line '
+      + 'means rewriting the entire remainder of the chain.\n\n'
+      + 'Each entry is then signed with an Ed25519 private key held outside the application, '
+      + 'so rewriting the chain is not sufficient either: an attacker would also need the '
+      + 'signing key to make the forged entries verify. The corresponding public key is served '
+      + 'openly, precisely so verification does not depend on trusting the server.\n\n'
+      + 'Verification walks the real chain on the server, recomputing every hash and checking '
+      + 'every signature in order, and reports the exact sequence number where the chain first '
+      + 'breaks rather than a bare pass or fail. That is the difference between a log and an '
+      + 'audit trail: a log asks to be believed, while this can be checked by someone who does '
+      + 'not trust the people who produced it.\n\n'
+      + 'One limitation is worth stating plainly. Append-only enforcement at the database '
+      + 'level is a PostgreSQL trigger defined in the reference schema; on the SQLite path used '
+      + 'for portability that trigger is not created, so today the guarantee rests on the hash '
+      + 'chain and the signatures — which is exactly what verification actually checks.',
+    source: 'app/services/governance.py · append_ledger(), verify_chain(), public_key_pem()',
     triggers: [],           // confirmed by reading the ledger, not by a frame
   },
 ];
