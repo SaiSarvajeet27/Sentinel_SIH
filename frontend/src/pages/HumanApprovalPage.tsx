@@ -176,7 +176,7 @@ export const HumanApprovalPage: React.FC = () => {
         isOpen={!!selectedAlternativesReq}
         request={selectedAlternativesReq}
         alternatives={
-          selectedAlternativesReq ? aiAnalyses[selectedAlternativesReq.incidentId]?.decisionSupport.alternatives || [] : []
+          selectedAlternativesReq ? aiAnalyses[selectedAlternativesReq.incidentId]?.decisionSupport?.alternatives || [] : []
         }
         onClose={() => setSelectedAlternativesReq(null)}
         onSelectOverride={(altTitle) => {
@@ -191,7 +191,7 @@ export const HumanApprovalPage: React.FC = () => {
         isOpen={!!selectedOverrideReq}
         request={selectedOverrideReq}
         alternatives={
-          selectedOverrideReq ? aiAnalyses[selectedOverrideReq.incidentId]?.decisionSupport.alternatives || [] : []
+          selectedOverrideReq ? aiAnalyses[selectedOverrideReq.incidentId]?.decisionSupport?.alternatives || [] : []
         }
         initialSelectedTitle={overridePreselectTitle}
         onClose={() => setSelectedOverrideReq(null)}

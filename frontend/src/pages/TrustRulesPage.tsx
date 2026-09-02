@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
 import {
-  Sliders, AlertTriangle, ArrowRight, RefreshCw, Trash2, History,
-  ShieldCheck, AlertOctagon, GitCompare, Lock, CheckCircle2,
-  MessageSquare, Plus, Edit3,
+  Sliders,
+  AlertTriangle,
+  Trash2,
+  History,
+  ShieldCheck,
+  AlertOctagon,
+  GitCompare,
+  Lock,
+  CheckCircle2,
+  MessageSquare,
+  Edit3,
 } from 'lucide-react';
 import { useSOC } from '../components/common/SOCContext';
 import { DetectionRule, Severity } from '../types/soc';

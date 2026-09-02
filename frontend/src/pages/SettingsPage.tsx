@@ -18,7 +18,7 @@ export const SettingsPage: React.FC = () => {
   const wsBase = API_BASE.replace(/^http/, 'ws');
 
   useEffect(() => {
-    backendApi.aiUsage().then(setAiUsage).catch(() => setAiUsage(null));
+    backendApi.aiUsage().then((res) => setAiUsage(res as unknown as AIUsage)).catch(() => setAiUsage(null));
   }, []);
 
   const handleSave = (e: React.FormEvent) => {

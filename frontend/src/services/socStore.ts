@@ -36,14 +36,12 @@ import {
   SimulationEventItem,
   SimulationSnapshot,
   SimulationState,
-  Severity,
   IncidentStatus,
 } from '../types/soc';
 import { backendApi, setToken, clearToken, connectWebSocket, ApiError } from './backendApi';
 import {
   adaptIncident,
   adaptIncidentTimeline,
-  adaptEvent,
   adaptLedgerToEvidence,
   adaptAction,
   adaptApproval,
@@ -70,13 +68,6 @@ export interface SOCNotification {
 }
 
 type StoreListener = () => void;
-
-/** One raw WebSocket frame, forwarded untouched to pipeline observers. */
-export interface PipelineMessage {
-  kind: string;
-  payload: any;
-  at: number;
-}
 
 const EMPTY_AI_ANALYSIS = (incidentId: string, title: string): AIAnalysis => ({
   incidentId,
@@ -157,27 +148,6 @@ class SOCStore {
 
   private notify() {
     this.listeners.forEach((l) => l());
-  }
-
-  // ── raw pipeline tap ───────────────────────────────────────────────
-  // The Live Threat page needs the socket messages themselves, not the
-  // digested cache the rest of the app reads: its whole job is to show
-  // detection happening in the order it actually happens. Everything
-  // below is a passive observer — no message is consumed here, so
-  // removing this tap cannot change how the app behaves.
-  private pipelineListeners: Set<(m: PipelineMessage) => void> = new Set();
-
-  public subscribePipeline(fn: (m: PipelineMessage) => void): () => void {
-    this.pipelineListeners.add(fn);
-    return () => this.pipelineListeners.delete(fn);
-  }
-
-  private emitPipeline(kind: string, payload: any) {
-    const msg: PipelineMessage = { kind, payload, at: Date.now() };
-    this.pipelineListeners.forEach((fn) => {
-      // One badly-behaved observer must not break the socket handler.
-      try { fn(msg); } catch { /* ignore */ }
-    });
   }
 
   // ── auth ───────────────────────────────────────────────────────────
@@ -317,7 +287,7 @@ class SOCStore {
         backendApi.explanation(id).catch(() => null),
         backendApi.alternatives(id).catch(() => []),
         backendApi.trustTimeMachine(id).catch(() => null),
-        backendApi.getRemediation(id).catch(() => null),
+        backendApi.getRemediation(id).catch(() => undefined),
       ]);
       this.aiAnalyses[id] = adaptAIAnalysis(incidentRow, explanation, alternatives, ttm, remediation);
       this.notify();
@@ -956,10 +926,6 @@ class SOCStore {
   private connectSocket() {
     if (this.ws) return;
     this.ws = connectWebSocket(async (msg) => {
-      // Tap first, so the Live Threat page sees every stage in the order
-      // the backend produced it, including the kinds the switch below
-      // deliberately ignores (ai.thinking, remediation.proposed, …).
-      this.emitPipeline(msg.kind, msg.payload);
       switch (msg.kind) {
         case 'incident.updated':
         case 'alert':

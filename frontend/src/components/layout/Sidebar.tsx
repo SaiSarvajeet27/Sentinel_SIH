@@ -9,7 +9,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
-  Radio,
+  Flame,
 } from 'lucide-react';
 import { useSOC } from '../common/SOCContext';
 import { useTheme } from '../common/ThemeContext';
@@ -24,7 +24,13 @@ export const Sidebar: React.FC = () => {
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: Home },
-    { path: '/live', label: 'Live Threat', icon: Radio },
+    {
+      path: '/live-demo',
+      label: 'Live Threat Demo',
+      icon: Flame,
+      badge: 'DEMO',
+      badgeColor: 'bg-red-500 text-white font-bold',
+    },
     {
       path: '/incidents',
       label: 'Incidents',

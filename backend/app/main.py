@@ -78,14 +78,34 @@ async def authenticate_api(request: Request, call_next):
     if not request.url.path.startswith("/api/") or request.url.path == "/api/auth/login":
         return await call_next(request)
 
+    def deny(detail: str, code: int) -> JSONResponse:
+        """A 401 the browser can actually read.
+
+        Because CORSMiddleware sits inside this one, a response returned
+        from here never passes through it — so the browser saw a reply with
+        no Access-Control-Allow-Origin and reported "blocked by CORS
+        policy" instead of the 401 that was actually sent. The practical
+        effect is that an expired token looks like a network or
+        configuration fault: the console fills with CORS errors, the real
+        status is invisible, and whoever is debugging goes looking in the
+        wrong place entirely. Attach the headers here so the status, and
+        the reason, survive the trip.
+        """
+        origin = request.headers.get("origin")
+        resp = JSONResponse({"detail": detail}, status_code=code)
+        if origin and (origin in config.CORS_ORIGINS or "*" in config.CORS_ORIGINS):
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Access-Control-Allow-Credentials"] = "true"
+            resp.headers["Vary"] = "Origin"
+        return resp
+
     header = request.headers.get("Authorization", "")
     if not header.startswith("Bearer "):
-        return JSONResponse({"detail": "authentication required"},
-                            status_code=status.HTTP_401_UNAUTHORIZED)
+        return deny("authentication required", status.HTTP_401_UNAUTHORIZED)
     try:
         request.state.principal = auth.decode_access_token(header[7:])
     except HTTPException as exc:
-        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        return deny(exc.detail, exc.status_code)
     return await call_next(request)
 
 

@@ -96,6 +96,88 @@ exactly when that happens.
 
 ---
 
+## Live Threat Response Demo (Round 2 Showcase)
+
+SENTINEL-X includes a dedicated **Live Threat Response Demo** accessible directly from the top navigation bar, the sidebar (`Live Threat Demo`), the dashboard showcase card, or at `/live-demo`.
+
+This feature provides a deterministic, simulated end-to-end SOC workflow demonstrating telemetry generation, normalization, Sigma rule detection, AI-assisted reasoning, incident creation, response recommendation, mandatory human authorization, governed response execution, and SHA-256 hash-chained audit logging.
+
+```
+EVENT GENERATED
+      ↓
+EVENT PROCESSED
+      ↓
+SIGMA RULE DETECTION
+      ↓
+AI EVALUATION
+      ↓
+INCIDENT CREATED
+      ↓
+RESPONSE RECOMMENDED
+      ↓
+HUMAN APPROVAL (Safety Interlock — Simulation Automatically Pauses)
+      ↓
+RESPONSE EXECUTED (Simulated)
+      ↓
+AUDIT TRAIL (SHA-256 Chained)
+```
+
+### Core Governance Principle
+- **AI recommends.**
+- **Human authorizes.**
+- **Governed response is executed.**
+- **Every step is audited.**
+
+> **Prototype / Demo Disclaimer**: This project contains simulated security telemetry, detection, AI evaluation, and response execution for demonstration purposes. The live threat simulation is a prototype demonstration and does not execute real containment actions against production infrastructure.
+
+---
+
+## Live Demo — Judge Walkthrough (2–3 Minutes)
+
+Follow this step-by-step flow during the presentation:
+
+1. **Open Live Threat Demo**: Navigate to **[http://localhost:5173/live-demo](http://localhost:5173/live-demo)** or click **"Live Threat Demo"** in the sidebar.
+2. **Start Simulation**: Click **"Start Live Threat Simulation"**.
+3. **Stage 1 — Event Generated**: Observe synthetic telemetry (`EVT-LIVE-001`, Email Gateway, high severity phishing link click on `WORKSTATION-04` by `analyst.smith@sentinel.local`).
+4. **Stage 2 — Event Processed**: Observe multi-source telemetry normalization and correlation across Email, Identity (Entra ID), and Endpoint EDR signals.
+5. **Stage 3 — Sigma Rule Detection**: Observe simulated match for Sigma Rule `SOC-AUTH-001: Suspicious Authentication After Phishing Event` (MITRE ATT&CK `T1566.002` / `T1078`).
+6. **Stage 4 — AI Evaluation**: Observe the dual-path AI assessment card with a 92% confidence score, root cause breakdown, *Why Act vs. Why Wait* analysis, and risk if ignored.
+7. **Stage 5 — Incident Created**: Observe the creation of incident `INC-LIVE-001` (Severity: High, Risk Score: 88/100).
+8. **Stage 6 — Response Recommended**: Observe playbook formulation (`Identity Containment`, Action: *Revoke active sessions*, Governance: Tier 2 Sensitive - Reversible). Notice the banner: **AI Recommendation ≠ Execution**.
+9. **Stage 7 — Human Approval Required**: Notice that the workflow **automatically pauses** and engages the **Safety Interlock**. The system strictly refuses to execute without named analyst action.
+10. **Human Decision**:
+    - Click **`[ APPROVE ]`** to authorize the recommended action, or
+    - Click **`[ REJECT ]`** to abort response execution with a documented reason, or
+    - Click **`[ OVERRIDE ]`** to select an alternative action (e.g. *Trigger MFA Step-Up Challenge*), or
+    - Click **`[ ESCALATE ]`** to escalate to Tier 3 / Senior Commander.
+11. **Stage 8 — Response Executed**: Observe simulated response actuation (*"Revoke active sessions"* on `analyst.smith@sentinel.local`) confirming threat containment.
+12. **Stage 9 — Audit Trail**: Inspect the live streaming audit ledger containing SHA-256 hash-chained records with sequence numbers, timestamps, actors, and parent hash links.
+13. **Reset & Replay**: Click **`[ Reset Demo ]`** to return the state machine to its initial clean state, and adjust replay speed (`0.5x`, `1x`, `2x`, `4x`) as desired.
+
+---
+
+## Human-in-the-Loop Governance
+
+SENTINEL-X enforces strict policy boundaries regarding automated actions:
+- **No Autonomous High-Impact Execution**: The language model never holds authority to isolate hosts, revoke credentials, or modify policies without approval.
+- **Safety Interlock**: Reaching Tier 2/3 containment automatically halts execution until a named, authenticated analyst explicitly decides.
+- **Decision Controls**:
+  - **Approve**: Authorizes the proposed response and triggers governed simulated execution.
+  - **Reject**: Aborts execution, prevents unauthorized system changes, and records rejection in the audit trail.
+  - **Override**: Records the operator override rationale and executes the analyst-selected alternative.
+  - **Escalate**: Defers execution and forwards the request to senior incident commanders.
+
+---
+
+## Cryptographic Audit Ledger & Provenance
+
+Every event in the live threat simulation is recorded sequentially in an audit ledger:
+- Events logged: `EVENT_GENERATED`, `EVENT_PROCESSED`, `SIGMA_DETECTION`, `AI_EVALUATION`, `INCIDENT_CREATED`, `RESPONSE_RECOMMENDED`, `APPROVAL_REQUESTED`, `ANALYST_APPROVED` (or `REJECTED`/`OVERRIDDEN`/`ESCALATED`), `RESPONSE_EXECUTED`, and `AUDIT_COMPLETED`.
+- Entries are linked using **SHA-256 hash-chained audit records** computed via the browser WebCrypto API.
+- Each record displays its sequence index, timestamp, actor, source pipeline, execution status, evidence references, and parent/current SHA-256 hashes.
+
+---
+
 ## Getting API keys
 
 Two providers, both free, neither requires a credit card. This is the part
@@ -359,6 +441,80 @@ API key.
 - Frontend dependencies are pinned in
   [`frontend/package.json`](frontend/package.json) — React 19, Vite, Tailwind
   CSS 4, React Router 7, Recharts, and `@xyflow/react` for the attack graph.
+
+---
+
+## Features
+
+- **Live Threat Response Demo**: 9-stage end-to-end simulated SOC workflow demonstrating detection, dual-path AI reasoning, safety interlock pausing, human authorization (`Approve`/`Reject`/`Override`/`Escalate`), and SHA-256 hash-chained audit logging.
+- **SOC Command Dashboard**: Real-time event ingestion metrics, unresolved threat summaries, MTTR/MTTD analytics, playbook usage statistics, and operational health.
+- **Incident & Alert Management**: Severity-categorized alerts, risk scoring (0–100), affected identity/workstation attribution, and MITRE ATT&CK mapping.
+- **Interactive Attack Graph**: Entity graph and lateral movement visualization powered by `@xyflow/react`.
+- **Dual-Path AI Investigation**: Independent AI threat analysis blind to deterministic scores, reconciled based on maximum risk with full *Why Act vs. Why Wait* decision support.
+- **Playbooks & Remediation**: Structured response plans with clear separation between *AI Recommendation* and *Governed Execution*.
+- **Human Governance & Approval Center**: Enforces authorization tiers (Tier 0–3). Provides 5 human controls: Approve, Reject, Override, Alternatives, and Escalate.
+- **Cryptographic Evidence & Audit Registry**: Hash-chained audit ledger with server-side Ed25519 signatures and browser-side SHA-256 verification.
+- **Trust & Rule Management**: AI trust score tracking, false positive rate tracking, rule retirement candidates, and override history.
+- **AI Safety & Defense**: Interceptor for adversarial prompt-injection payloads embedded in telemetry.
+- **Theme & Accessibility**: Full light mode (Daylight) and dark mode (Midnight) support with responsive enterprise UI.
+
+---
+
+## Application Routes
+
+| Route | Description |
+|---|---|
+| `/` | Security Operations Center Command Dashboard |
+| `/live-demo` | **Live Threat Response Demo** (also accessible via `/simulation` or `/simulator`) |
+| `/incidents` | Incident & Alert Management Queue |
+| `/incident/:id` | Incident Detail (Overview, Attack Graph, AI Investigation, Remediation Tabs) |
+| `/approvals` | Human Governance & Authorization Center |
+| `/rules` | Trust Scores, Rule Performance & Learning Loop |
+| `/evidence` | Cryptographic Evidence Ledger & Hash Chain Verification |
+| `/settings` | LLM Provider Routing, Autonomy Policies & System Settings |
+| `/login` | Analyst Role Authentication |
+
+---
+
+## Project Structure
+
+```
+SentinelSOC/
+├── backend/
+│   ├── app/                 FastAPI application (routes, models, detection, LLM router, ledger)
+│   ├── db/                  Database initialization and migrations
+│   ├── scripts/             Bootstrap, verify, demo-day, and AI diagnostic scripts
+│   └── requirements.txt     Backend dependencies
+└── frontend/
+    ├── src/
+    │   ├── components/
+    │   │   ├── ai/          AI Investigation & decision support components
+    │   │   ├── approval/    Human authorization cards and modals
+    │   │   ├── audit/       Audit integrity and chain verification modals
+    │   │   ├── common/      SOCContext, ThemeContext, badges, and shared UI
+    │   │   ├── layout/      MainLayout, Sidebar, Topbar
+    │   │   ├── live-simulation/ Live 9-stage pipeline, telemetry, Sigma, AI, and audit panels
+    │   │   └── rules/       Detection rule management and trust cards
+    │   ├── pages/
+    │   │   ├── DashboardPage.tsx
+    │   │   ├── LiveThreatSimulationPage.tsx  # Round 2 Live Threat Response Demo
+    │   │   ├── IncidentsPage.tsx
+    │   │   ├── IncidentDetailPage.tsx
+    │   │   ├── HumanApprovalPage.tsx
+    │   │   ├── EvidenceAuditPage.tsx
+    │   │   ├── TrustRulesPage.tsx
+    │   │   └── SettingsPage.tsx
+    │   ├── services/
+    │   │   ├── backendApi.ts                 # REST client for FastAPI backend
+    │   │   ├── liveThreatSimulationService.ts # Unified 9-stage simulation engine
+    │   │   ├── realtimeService.ts            # WebSocket connection
+    │   │   └── socStore.ts                   # Central SOC reactive store
+    │   ├── types/
+    │   │   ├── liveSimulation.ts             # Live threat demo interfaces & state types
+    │   │   └── soc.ts                        # Core domain models
+    │   └── App.tsx          Router configuration
+    └── package.json         Frontend dependencies
+```
 
 ---
 

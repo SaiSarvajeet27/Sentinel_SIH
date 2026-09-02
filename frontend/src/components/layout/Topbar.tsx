@@ -48,7 +48,7 @@ export const Topbar: React.FC<Props> = ({ isDemoRunning = false }) => {
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-soc-card border border-soc-border shadow-sm text-xs font-semibold text-soc-ai"
             >
               <Radio className="w-3 h-3 animate-pulse" />
-              <span>Live: New Incident Generating…</span>
+              <span>Live: Incident Generating…</span>
             </div>
           )}
 
